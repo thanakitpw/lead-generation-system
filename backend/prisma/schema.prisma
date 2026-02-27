@@ -1,0 +1,307 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===== USERS (Single user for MVP) =====
+model User {
+  id               String    @id @default(uuid())
+  email            String    @unique
+  passwordHash     String    @map("password_hash")
+  fullName         String?   @map("full_name")
+  lineNotifyToken  String?   @map("line_notify_token")
+  isActive         Boolean   @default(true) @map("is_active")
+  lastLoginAt      DateTime? @map("last_login_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  campaigns     Campaign[]
+  approvedDrafts EmailDraft[] @relation("ApprovedBy")
+
+  @@map("users")
+}
+
+// ===== CAMPAIGNS =====
+model Campaign {
+  id          String         @id @default(uuid())
+  createdBy   String         @map("created_by")
+  name        String
+  description String?
+  status      CampaignStatus @default(DRAFT)
+
+  // Targeting
+  targetIndustry  String? @map("target_industry")
+  targetLocation  String? @map("target_location")
+  targetKeywords  String[] @map("target_keywords")
+
+  // Email settings
+  senderName    String? @map("sender_name")
+  senderEmail   String? @map("sender_email")
+  replyToEmail  String? @map("reply_to_email")
+
+  // AI settings
+  aiModel             String  @default("claude-3-5-sonnet-20241022") @map("ai_model")
+  confidenceThreshold Decimal @default(0.75) @map("confidence_threshold")
+  systemPrompt        String? @map("system_prompt")
+
+  // Limits
+  dailySendLimit  Int @default(50) @map("daily_send_limit")
+
+  // Stats (denormalized for performance)
+  statsTotalLeads    Int @default(0) @map("stats_total_leads")
+  statsEmailsSent    Int @default(0) @map("stats_emails_sent")
+  statsEmailsOpened  Int @default(0) @map("stats_emails_opened")
+  statsEmailsClicked Int @default(0) @map("stats_emails_clicked")
+  statsEmailsReplied Int @default(0) @map("stats_emails_replied")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user           User           @relation(fields: [createdBy], references: [id])
+  campaignLeads  CampaignLead[]
+  scrapingJobs   ScrapingJob[]
+
+  @@map("campaigns")
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+  ARCHIVED
+}
+
+// ===== LEADS =====
+model Lead {
+  id String @id @default(uuid())
+
+  // Company info
+  companyName          String  @map("company_name")
+  industry             String?
+  website              String?
+  address              String?
+  city                 String?
+  province             String?
+  phone                String?
+  googleMapsPlaceId    String? @map("google_maps_place_id")
+  googleMapsRating     Decimal? @map("google_maps_rating")
+  googleMapsReviews    Int?    @map("google_maps_reviews")
+
+  // Contact info
+  contactName              String?  @map("contact_name")
+  contactTitle             String?  @map("contact_title")
+  email                    String?
+  emailVerified            Boolean  @default(false) @map("email_verified")
+  emailVerificationStatus  String?  @map("email_verification_status")
+
+  // Enrichment
+  websiteCrawled      Boolean   @default(false) @map("website_crawled")
+  websiteCrawledAt    DateTime? @map("website_crawled_at")
+  companyDescription  String?   @map("company_description")
+
+  // CRM (HubSpot)
+  hubspotContactId  String? @map("hubspot_contact_id")
+  hubspotDealId     String? @map("hubspot_deal_id")
+
+  // Status
+  status  LeadStatus @default(NEW)
+  source  String?
+
+  // Metadata
+  rawData   Json?    @map("raw_data")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  campaignLeads CampaignLead[]
+
+  @@map("leads")
+}
+
+enum LeadStatus {
+  NEW
+  ENRICHED
+  EMAILED
+  OPENED
+  CLICKED
+  REPLIED
+  CONVERTED
+  UNSUBSCRIBED
+  BOUNCED
+}
+
+// ===== CAMPAIGN LEADS (junction) =====
+model CampaignLead {
+  id         String           @id @default(uuid())
+  campaignId String           @map("campaign_id")
+  leadId     String           @map("lead_id")
+  status     CampaignLeadStatus @default(PENDING)
+
+  nextSendAt  DateTime? @map("next_send_at")
+  lastSentAt  DateTime? @map("last_sent_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  campaign     Campaign     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  lead         Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  emailDrafts  EmailDraft[]
+  emailEvents  EmailEvent[]
+
+  @@unique([campaignId, leadId])
+  @@map("campaign_leads")
+}
+
+enum CampaignLeadStatus {
+  PENDING
+  SENT
+  OPENED
+  CLICKED
+  REPLIED
+  CONVERTED
+  UNSUBSCRIBED
+  BOUNCED
+  FAILED
+}
+
+// ===== EMAIL DRAFTS =====
+model EmailDraft {
+  id               String @id @default(uuid())
+  campaignLeadId   String @map("campaign_lead_id")
+
+  // Content
+  subject   String
+  bodyHtml  String @map("body_html")
+  bodyText  String? @map("body_text")
+
+  // AI metadata
+  aiModel       String?  @map("ai_model")
+  aiConfidence  Decimal? @map("ai_confidence")
+  aiTokensUsed  Int?     @map("ai_tokens_used")
+  aiCostUsd     Decimal? @map("ai_cost_usd")
+  aiReasoning   String?  @map("ai_reasoning")
+
+  // Status
+  status          EmailDraftStatus @default(DRAFT)
+  approvedBy      String?          @map("approved_by")
+  approvedAt      DateTime?        @map("approved_at")
+  rejectedReason  String?          @map("rejected_reason")
+
+  // Sending
+  brevoMessageId  String?   @map("brevo_message_id")
+  sentAt          DateTime? @map("sent_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  campaignLead  CampaignLead @relation(fields: [campaignLeadId], references: [id], onDelete: Cascade)
+  approver      User?        @relation("ApprovedBy", fields: [approvedBy], references: [id])
+  emailEvents   EmailEvent[]
+
+  @@map("email_drafts")
+}
+
+enum EmailDraftStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  SENT
+  FAILED
+  REJECTED
+}
+
+// ===== EMAIL EVENTS (tracking) =====
+model EmailEvent {
+  id             String @id @default(uuid())
+  emailDraftId   String @map("email_draft_id")
+  campaignLeadId String @map("campaign_lead_id")
+
+  eventType  EmailEventType
+  eventData  Json?    @map("event_data")
+  occurredAt DateTime @default(now()) @map("occurred_at")
+
+  campaignLead CampaignLead @relation(fields: [campaignLeadId], references: [id])
+  draft        EmailDraft   @relation(fields: [emailDraftId], references: [id], onDelete: Cascade)
+
+  @@map("email_events")
+}
+
+enum EmailEventType {
+  SENT
+  DELIVERED
+  OPENED
+  CLICKED
+  REPLIED
+  BOUNCED
+  SPAM
+  UNSUBSCRIBED
+}
+
+// ===== SCRAPING JOBS =====
+model ScrapingJob {
+  id         String @id @default(uuid())
+  campaignId String @map("campaign_id")
+
+  status  ScrapingJobStatus @default(PENDING)
+
+  // Config
+  keywords   String[]
+  location   String
+  industry   String?
+  maxResults Int     @default(100) @map("max_results")
+
+  // Progress
+  totalFound       Int @default(0) @map("total_found")
+  totalEnriched    Int @default(0) @map("total_enriched")
+  totalEmailsFound Int @default(0) @map("total_emails_found")
+
+  // Timing
+  startedAt    DateTime? @map("started_at")
+  completedAt  DateTime? @map("completed_at")
+  errorMessage String?   @map("error_message")
+
+  results Json?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@map("scraping_jobs")
+}
+
+enum ScrapingJobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+// ===== UNSUBSCRIBES =====
+model Unsubscribe {
+  id              String   @id @default(uuid())
+  email           String   @unique
+  reason          String?
+  unsubscribedAt  DateTime @default(now()) @map("unsubscribed_at")
+
+  @@map("unsubscribes")
+}
+
+// ===== API USAGE LOGS =====
+model ApiUsageLog {
+  id          String @id @default(uuid())
+  service     String
+  tokensUsed  Int?   @map("tokens_used")
+  costUsd     Decimal? @map("cost_usd")
+  requestType String? @map("request_type")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("api_usage_logs")
+}
