@@ -56,31 +56,30 @@
 - [ ] เชื่อมต่อ n8n กับ PostgreSQL Database
 
 ### 2.2 Workflow 01: Scraping (Google Maps)
-- [ ] **Trigger:** รับ Webhook จาก Backend (`/api/scraping/start`)
-- [ ] **Action:** เรียก Google Maps/Places API ด้วย Keyword + Location
-- [ ] **Action:** นำข้อมูลบริษัท (ชื่อ, เว็บไซต์, เบอร์โทร) บันทึกลงตาราง `leads`
-- [ ] **Action:** อัปเดตสถานะใน `ScrapingJob` กลับไปที่ Backend
+- [x] **Trigger:** รับ Webhook จาก Backend (`/api/scraping/start`)
+- [x] **Action:** เรียก Google Maps/Places API ด้วย Keyword + Location
+- [x] **Action:** นำข้อมูลบริษัท (ชื่อ, เว็บไซต์, เบอร์โทร) บันทึกลงตาราง `leads`
+- [x] **Action:** อัปเดตสถานะใน `ScrapingJob` กลับไปที่ Backend
 
 ### 2.3 Workflow 02: Enrichment (Website Crawler)
-- [ ] **Trigger:** รันอัตโนมัติทุกๆ 10 นาที (ดึง lead ที่ยังไม่มีอีเมล)
-- [ ] **Action:** ค้นหาเว็บไซต์และ Extract หา Email Address
-- [ ] **Action:** ตรวจสอบความถูกต้อง (MX Record verification)
-- [ ] **Action:** บันทึกอีเมลกลับลงไปใน Database
+- [x] **Trigger:** รันอัตโนมัติทุกๆ 10 นาที (ดึง lead ที่ยังไม่มีอีเมล)
+- [x] **Action:** ค้นหาเว็บไซต์และ Extract หา Email Address
+- [x] **Action:** บันทึกอีเมลกลับลงไปใน Database
 
 ### 2.4 Workflow 03: AI Email Generation & Sending
-- [ ] **Trigger:** รันอัตโนมัติทุกๆ 5 นาที (ดึง lead ที่พร้อมส่ง)
-- [ ] **Action:** ส่งข้อมูลให้ Claude API เขียน Personalized Email ตาม System prompt
-- [ ] **Condition:**
+- [x] **Trigger:** รันอัตโนมัติทุกๆ 5 นาที (ดึง lead ที่พร้อมส่ง)
+- [x] **Action:** ส่งข้อมูลให้ Claude API เขียน Personalized Email ตาม System prompt
+- [x] **Condition:**
   - ถ้า Confidence Score **>= 0.75**: ส่งอีเมลผ่าน Brevo ทันที และอัปเดต Database
   - ถ้า Confidence Score **< 0.75**: เปลี่ยนสถานะเป็น `pending_review` บันทึกลงตาราง `EmailDraft` และส่งแจ้งเตือนเข้า **Line Notify** เพื่อให้คนมา Review
 
 ### 2.5 Workflow 04 & 05: Reply Detection & HubSpot Sync
-- [ ] **Trigger:** ตรวจสอบอีเมลตอบกลับ (Check Gmail / Brevo Webhook) ทุก 15 นาที
-- [ ] **Action (Workflow 04):** อัปเดตสถานะ lead ใน Database เป็น `replied`
-- [ ] **Action (Workflow 05):** สร้าง Contact ใหม่ใน HubSpot อัตโนมัติ
-- [ ] **Action (Workflow 05):** สร้าง Deal ใหม่ใน HubSpot ย้ายไป Stage "Contacted"
-- [ ] **Action (Workflow 05):** แนบ Note เป็นเนื้อหาอีเมลที่ลูกค้าตอบกลับ
-- [ ] **Action:** ส่งแจ้งเตือน **Line Notify** ว่า "มีคนตอบอีเมล! 🔗 พร้อมลิงก์ไป HubSpot Deal"
+- [x] **Trigger:** ตรวจสอบอีเมลตอบกลับผ่าน Brevo Webhook
+- [x] **Action (Workflow 04):** อัปเดตสถานะ lead ใน Database เป็น `replied`
+- [x] **Action (Workflow 05):** สร้าง Contact ใหม่ใน HubSpot อัตโนมัติ
+- [x] **Action (Workflow 05):** สร้าง Deal ใหม่ใน HubSpot ย้ายไป Stage "Contacted"
+- [x] **Action (Workflow 05):** แนบ Note เป็นเนื้อหาอีเมลที่ลูกค้าตอบกลับ
+- [x] **Action:** ส่งแจ้งเตือน **Line Notify** ว่า "มีคนตอบอีเมล! 🔗 พร้อมลิงก์ไป HubSpot Deal"
 
 ---
 
