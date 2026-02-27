@@ -1,0 +1,234 @@
+{
+  "name": "03 - AI Email Generation & Sending",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "minutes", "minutesInterval": 5 }]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every 5 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.BACKEND_URL }}/api/leads",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "status", "value": "NEW" },
+            { "name": "hasEmail", "value": "true" },
+            { "name": "limit", "value": "10" }
+          ]
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "fetch-ready-leads",
+      "name": "Fetch Ready Leads",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [460, 300],
+      "credentials": {
+        "httpHeaderAuth": { "id": "backend-api-auth", "name": "Backend API Auth" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.first().json.data || [];\nif (items.length === 0) return [];\nreturn items.map(item => ({ json: item }));"
+      },
+      "id": "split-leads",
+      "name": "Split Leads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.BACKEND_URL }}/api/campaigns/{{ $json.campaignLeads[0].campaignId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "fetch-campaign",
+      "name": "Fetch Campaign",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 300],
+      "credentials": {
+        "httpHeaderAuth": { "id": "backend-api-auth", "name": "Backend API Auth" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $('Split Leads').first().json;\nconst campaign = $input.first().json;\n\nconst systemPrompt = campaign.systemPrompt || `คุณเป็นผู้เชี่ยวชาญด้านการเขียน Cold Email ภาษาไทยสำหรับ B2B\nเขียนอีเมลที่เป็นธรรมชาติ ไม่เป็นทางการจนเกินไป และตรงประเด็น\nห้ามใช้คำว่า \"เรียน\" หรือรูปแบบอีเมลทางการมากเกินไป\nความยาวไม่เกิน 150 คำ`;\n\nconst userPrompt = `เขียน Cold Email ให้กับบริษัท:\n- ชื่อบริษัท: ${lead.companyName}\n- ที่อยู่: ${lead.address || 'ไม่ระบุ'}\n- เว็บไซต์: ${lead.website || 'ไม่มี'}\n- อุตสาหกรรม: ${lead.industry || campaign.targetIndustry || 'ไม่ระบุ'}\n\nแคมเปญ: ${campaign.name}\nผู้ส่ง: ${campaign.senderName} จาก BestSolutions Corp\n\nต้องการ JSON format:\n{\n  \"subject\": \"หัวข้ออีเมล\",\n  \"body_html\": \"เนื้อหาอีเมล HTML\",\n  \"body_text\": \"เนื้อหาอีเมล plain text\",\n  \"confidence\": 0.85,\n  \"reasoning\": \"เหตุผลที่ให้คะแนนนี้\"\n}`;\n\nreturn [{\n  json: {\n    lead,\n    campaign,\n    systemPrompt,\n    userPrompt,\n    campaignLeadId: lead.campaignLeads?.[0]?.id\n  }\n}];"
+      },
+      "id": "build-prompt",
+      "name": "Build AI Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{ $env.CLAUDE_API_KEY }}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ model: 'claude-3-haiku-20240307', max_tokens: 1024, system: $json.systemPrompt, messages: [{ role: 'user', content: $json.userPrompt }] }) }}"
+        },
+        "options": {}
+      },
+      "id": "call-claude-api",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const claudeResponse = $input.first().json;\nconst prevData = $('Build AI Prompt').first().json;\n\nlet emailData;\ntry {\n  const content = claudeResponse.content?.[0]?.text || '';\n  const jsonMatch = content.match(/\\{[\\s\\S]*\\}/);\n  if (!jsonMatch) throw new Error('No JSON found in Claude response');\n  emailData = JSON.parse(jsonMatch[0]);\n} catch(e) {\n  emailData = {\n    subject: `โซลูชันที่น่าสนใจสำหรับ ${prevData.lead.companyName}`,\n    body_html: `<p>สวัสดีครับ/ค่ะ</p><p>ผมชื่อ ${prevData.campaign.senderName} จาก BestSolutions Corp ครับ</p>`,\n    body_text: `สวัสดีครับ/ค่ะ`,\n    confidence: 0.5,\n    reasoning: 'Parse error - fallback used'\n  };\n}\n\nconst usage = claudeResponse.usage || {};\nconst tokensUsed = (usage.input_tokens || 0) + (usage.output_tokens || 0);\nconst costUsd = tokensUsed * 0.00000025;\n\nreturn [{\n  json: {\n    ...prevData,\n    subject: emailData.subject,\n    bodyHtml: emailData.body_html,\n    bodyText: emailData.body_text,\n    confidence: emailData.confidence || 0.7,\n    reasoning: emailData.reasoning,\n    tokensUsed,\n    costUsd\n  }\n}];"
+      },
+      "id": "parse-claude-response",
+      "name": "Parse Claude Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.confidence }}",
+              "rightValue": "={{ $json.campaign.confidenceThreshold || 0.75 }}",
+              "operator": { "type": "number", "operation": "gte" }
+            }
+          ]
+        }
+      },
+      "id": "check-confidence",
+      "name": "Confidence >= Threshold?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1780, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.BACKEND_URL }}/api/webhooks/n8n",
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ type: 'email_draft_ready', action: 'auto_send', campaignLeadId: $json.campaignLeadId, subject: $json.subject, bodyHtml: $json.bodyHtml, bodyText: $json.bodyText, confidence: $json.confidence, reasoning: $json.reasoning, tokensUsed: $json.tokensUsed, costUsd: $json.costUsd }) }}"
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "save-and-send",
+      "name": "Save Draft & Auto Send",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2000, 180],
+      "credentials": {
+        "httpHeaderAuth": { "id": "backend-api-auth", "name": "Backend API Auth" }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.BACKEND_URL }}/api/webhooks/n8n",
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ type: 'email_draft_ready', action: 'pending_review', campaignLeadId: $json.campaignLeadId, subject: $json.subject, bodyHtml: $json.bodyHtml, bodyText: $json.bodyText, confidence: $json.confidence, reasoning: $json.reasoning, tokensUsed: $json.tokensUsed, costUsd: $json.costUsd }) }}"
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "save-pending-review",
+      "name": "Save as Pending Review",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2000, 420]
+    },
+    {
+      "parameters": {
+        "url": "https://notify-api.line.me/api/notify",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.LINE_NOTIFY_TOKEN }}" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "body": {
+          "parameters": [
+            {
+              "name": "message",
+              "value": "=⚠️ มี Draft ที่ต้องตรวจสอบ!\n\n🏢 บริษัท: {{ $json.lead.companyName }}\n📧 อีเมล: {{ $json.lead.email }}\n🎯 Confidence: {{ Math.round($json.confidence * 100) }}%\n💬 เหตุผล: {{ $json.reasoning }}\n\nกรุณาเข้าระบบเพื่อ Review: {{ $env.FRONTEND_URL }}/drafts"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "line-notify-low-confidence",
+      "name": "Line Notify: Low Confidence",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2220, 420]
+    }
+  ],
+  "connections": {
+    "Every 5 Minutes": {
+      "main": [[{ "node": "Fetch Ready Leads", "type": "main", "index": 0 }]]
+    },
+    "Fetch Ready Leads": {
+      "main": [[{ "node": "Split Leads", "type": "main", "index": 0 }]]
+    },
+    "Split Leads": {
+      "main": [[{ "node": "Fetch Campaign", "type": "main", "index": 0 }]]
+    },
+    "Fetch Campaign": {
+      "main": [[{ "node": "Build AI Prompt", "type": "main", "index": 0 }]]
+    },
+    "Build AI Prompt": {
+      "main": [[{ "node": "Call Claude API", "type": "main", "index": 0 }]]
+    },
+    "Call Claude API": {
+      "main": [[{ "node": "Parse Claude Response", "type": "main", "index": 0 }]]
+    },
+    "Parse Claude Response": {
+      "main": [[{ "node": "Confidence >= Threshold?", "type": "main", "index": 0 }]]
+    },
+    "Confidence >= Threshold?": {
+      "main": [
+        [{ "node": "Save Draft & Auto Send", "type": "main", "index": 0 }],
+        [{ "node": "Save as Pending Review", "type": "main", "index": 0 }]
+      ]
+    },
+    "Save as Pending Review": {
+      "main": [[{ "node": "Line Notify: Low Confidence", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

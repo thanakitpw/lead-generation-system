@@ -1,0 +1,128 @@
+{
+  "name": "04 - Reply Detection & Lead Status Update",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "brevo-webhook",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "brevo-webhook",
+      "name": "Brevo Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst events = Array.isArray(body) ? body : [body];\n\nreturn events.map(event => ({\n  json: {\n    event: event.event,\n    email: event.email,\n    messageId: event['message-id'] || event.messageId,\n    date: event.date || new Date().toISOString(),\n    tags: event.tags || []\n  }\n}));"
+      },
+      "id": "parse-brevo-event",
+      "name": "Parse Brevo Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.event }}",
+              "rightValue": "replied",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ]
+        }
+      },
+      "id": "is-reply-event",
+      "name": "Is Reply Event?",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.BACKEND_URL }}/api/webhooks/brevo",
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ event: $json.event, email: $json.email, messageId: $json.messageId, date: $json.date }) }}"
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "update-backend",
+      "name": "Update Backend (replied status)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 300],
+      "credentials": {
+        "httpHeaderAuth": { "id": "backend-api-auth", "name": "Backend API Auth" }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://notify-api.line.me/api/notify",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.LINE_NOTIFY_TOKEN }}" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "body": {
+          "parameters": [
+            {
+              "name": "message",
+              "value": "=🎉 มีคนตอบอีเมลแล้ว!\n\n📧 อีเมล: {{ $json.email }}\n⏰ เวลา: {{ $json.date }}\n\n👉 ดูรายละเอียด: {{ $env.FRONTEND_URL }}/drafts"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "line-notify-reply",
+      "name": "Line Notify: New Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"success\": true } }}",
+        "options": {}
+      },
+      "id": "respond-ok",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1340, 300]
+    }
+  ],
+  "connections": {
+    "Brevo Webhook": {
+      "main": [[{ "node": "Parse Brevo Event", "type": "main", "index": 0 }]]
+    },
+    "Parse Brevo Event": {
+      "main": [[{ "node": "Is Reply Event?", "type": "main", "index": 0 }]]
+    },
+    "Is Reply Event?": {
+      "main": [[{ "node": "Update Backend (replied status)", "type": "main", "index": 0 }]]
+    },
+    "Update Backend (replied status)": {
+      "main": [[{ "node": "Line Notify: New Reply", "type": "main", "index": 0 }]]
+    },
+    "Line Notify: New Reply": {
+      "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

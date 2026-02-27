@@ -1,0 +1,265 @@
+{
+  "name": "05 - HubSpot Sync (Reply → Contact + Deal)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "hubspot-sync",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook: hubspot-sync",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nreturn [{\n  json: {\n    leadId: body.leadId,\n    companyName: body.companyName,\n    email: body.email,\n    contactName: body.contactName || null,\n    phone: body.phone || null,\n    website: body.website || null,\n    emailSubject: body.emailSubject || '',\n    emailBody: body.emailBody || '',\n    repliedAt: body.repliedAt || new Date().toISOString()\n  }\n}];"
+      },
+      "id": "parse-input",
+      "name": "Parse Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"success\": true, \"message\": \"HubSpot sync started\" } }}",
+        "options": {}
+      },
+      "id": "respond-accepted",
+      "name": "Respond Accepted",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [680, 160]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.hubapi.com/crm/v3/objects/contacts/search",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.HUBSPOT_ACCESS_TOKEN }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ filterGroups: [{ filters: [{ propertyName: 'email', operator: 'EQ', value: $json.email }] }], limit: 1 }) }}"
+        },
+        "options": {}
+      },
+      "id": "search-existing-contact",
+      "name": "Search Existing Contact",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.total }}",
+              "rightValue": 0,
+              "operator": { "type": "number", "operation": "equals" }
+            }
+          ]
+        }
+      },
+      "id": "contact-exists",
+      "name": "Contact Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "url": "https://api.hubapi.com/crm/v3/objects/contacts",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.HUBSPOT_ACCESS_TOKEN }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ properties: { email: $('Parse Input').first().json.email, firstname: ($('Parse Input').first().json.contactName || '').split(' ')[0] || '', lastname: ($('Parse Input').first().json.contactName || '').split(' ').slice(1).join(' ') || '', company: $('Parse Input').first().json.companyName, phone: $('Parse Input').first().json.phone || '', website: $('Parse Input').first().json.website || '', hs_lead_status: 'IN_PROGRESS', lifecyclestage: 'lead' } }) }}"
+        },
+        "options": {}
+      },
+      "id": "create-contact",
+      "name": "Create HubSpot Contact",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Use existing contact id\nconst existing = $('Search Existing Contact').first().json;\nconst contactId = existing.results?.[0]?.id;\nreturn [{ json: { contactId, isNew: false } }];"
+      },
+      "id": "use-existing-contact",
+      "name": "Use Existing Contact",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge contactId from whichever branch ran\nconst createResult = $('Create HubSpot Contact').first()?.json;\nconst existingResult = $('Use Existing Contact').first()?.json;\nconst contactId = createResult?.id || existingResult?.contactId;\nconst inputData = $('Parse Input').first().json;\nreturn [{ json: { ...inputData, contactId } }];"
+      },
+      "id": "merge-contact",
+      "name": "Merge Contact ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 400]
+    },
+    {
+      "parameters": {
+        "url": "https://api.hubapi.com/crm/v3/objects/deals",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.HUBSPOT_ACCESS_TOKEN }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ properties: { dealname: 'Lead: ' + $json.companyName, dealstage: 'appointmentscheduled', pipeline: 'default', closedate: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0], amount: '', description: 'Cold email reply from LeadGen system' }, associations: [{ to: { id: $json.contactId }, types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 3 }] }] }) }}"
+        },
+        "options": {}
+      },
+      "id": "create-deal",
+      "name": "Create HubSpot Deal",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1560, 400]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.hubapi.com/crm/v3/objects/notes",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.HUBSPOT_ACCESS_TOKEN }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ properties: { hs_note_body: '📧 Cold Email ที่ส่งไป:\\n\\nSubject: ' + $('Merge Contact ID').first().json.emailSubject + '\\n\\n' + $('Merge Contact ID').first().json.emailBody + '\\n\\n---\\nตอบกลับเมื่อ: ' + $('Merge Contact ID').first().json.repliedAt, hs_timestamp: Date.now() }, associations: [{ to: { id: $('Create HubSpot Deal').first().json.id }, types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 214 }] }, { to: { id: $('Merge Contact ID').first().json.contactId }, types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 202 }] }] }) }}"
+        },
+        "options": {}
+      },
+      "id": "attach-note",
+      "name": "Attach Email Note to Deal",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1780, 400]
+    },
+    {
+      "parameters": {
+        "url": "https://notify-api.line.me/api/notify",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{ $env.LINE_NOTIFY_TOKEN }}" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "body": {
+          "parameters": [
+            {
+              "name": "message",
+              "value": "=🎉 มีคนตอบอีเมล! สร้าง Deal ใน HubSpot แล้ว\n\n🏢 {{ $('Merge Contact ID').first().json.companyName }}\n📧 {{ $('Merge Contact ID').first().json.email }}\n🤝 Deal ID: {{ $('Create HubSpot Deal').first().json.id }}\n\n👉 HubSpot: https://app.hubspot.com/contacts/deals/{{ $('Create HubSpot Deal').first().json.id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "line-notify-deal",
+      "name": "Line Notify: Deal Created",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2000, 400]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.BACKEND_URL }}/api/webhooks/n8n",
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ type: 'hubspot_synced', leadId: $('Merge Contact ID').first().json.leadId, hubspotContactId: $('Merge Contact ID').first().json.contactId, hubspotDealId: $('Create HubSpot Deal').first().json.id }) }}"
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "update-backend-hubspot",
+      "name": "Update Backend with HubSpot IDs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2220, 400],
+      "credentials": {
+        "httpHeaderAuth": { "id": "backend-api-auth", "name": "Backend API Auth" }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook: hubspot-sync": {
+      "main": [[{ "node": "Parse Input", "type": "main", "index": 0 }]]
+    },
+    "Parse Input": {
+      "main": [
+        [{ "node": "Respond Accepted", "type": "main", "index": 0 }],
+        [{ "node": "Search Existing Contact", "type": "main", "index": 0 }]
+      ]
+    },
+    "Search Existing Contact": {
+      "main": [[{ "node": "Contact Exists?", "type": "main", "index": 0 }]]
+    },
+    "Contact Exists?": {
+      "main": [
+        [{ "node": "Create HubSpot Contact", "type": "main", "index": 0 }],
+        [{ "node": "Use Existing Contact", "type": "main", "index": 0 }]
+      ]
+    },
+    "Create HubSpot Contact": {
+      "main": [[{ "node": "Merge Contact ID", "type": "main", "index": 0 }]]
+    },
+    "Use Existing Contact": {
+      "main": [[{ "node": "Merge Contact ID", "type": "main", "index": 0 }]]
+    },
+    "Merge Contact ID": {
+      "main": [[{ "node": "Create HubSpot Deal", "type": "main", "index": 0 }]]
+    },
+    "Create HubSpot Deal": {
+      "main": [[{ "node": "Attach Email Note to Deal", "type": "main", "index": 0 }]]
+    },
+    "Attach Email Note to Deal": {
+      "main": [[{ "node": "Line Notify: Deal Created", "type": "main", "index": 0 }]]
+    },
+    "Line Notify: Deal Created": {
+      "main": [[{ "node": "Update Backend with HubSpot IDs", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

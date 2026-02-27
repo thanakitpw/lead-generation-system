@@ -1,0 +1,164 @@
+{
+  "name": "02 - Enrichment Pipeline (Find Email from Website)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "minutes", "minutesInterval": 10 }]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every 10 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.BACKEND_URL }}/api/leads",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "status", "value": "NEW" },
+            { "name": "hasWebsite", "value": "true" },
+            { "name": "hasEmail", "value": "false" },
+            { "name": "limit", "value": "20" }
+          ]
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "fetch-leads-without-email",
+      "name": "Fetch Leads Without Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [460, 300],
+      "credentials": {
+        "httpHeaderAuth": { "id": "backend-api-auth", "name": "Backend API Auth" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const leads = $input.first().json.data || [];\nif (leads.length === 0) return [];\nreturn leads.map(lead => ({ json: lead }));"
+      },
+      "id": "split-leads",
+      "name": "Split Leads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.website }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            }
+          ]
+        }
+      },
+      "id": "has-website",
+      "name": "Has Website?",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.website }}",
+        "options": {
+          "timeout": 10000,
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "crawl-website",
+      "name": "Crawl Website",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1120, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const html = $input.first().json || '';\nconst leadData = $('Split Leads').first().json;\n\nconst emailRegex = /[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}/g;\nconst allEmails = (typeof html === 'string' ? html : JSON.stringify(html)).match(emailRegex) || [];\n\n// Filter out common non-contact emails\nconst skipPatterns = ['@example', '@test', '@sentry', '@schema', 'noreply@', 'no-reply@', '@w3.org', '@google', '@facebook', '@apple'];\nconst filteredEmails = allEmails.filter(email => \n  !skipPatterns.some(p => email.toLowerCase().includes(p))\n);\n\n// Priority: info@, contact@, sales@, then first found\nconst priority = ['info@', 'contact@', 'sale', 'hello@', 'mail@'];\nlet bestEmail = null;\nfor (const prefix of priority) {\n  const found = filteredEmails.find(e => e.toLowerCase().startsWith(prefix));\n  if (found) { bestEmail = found; break; }\n}\nif (!bestEmail) bestEmail = filteredEmails[0] || null;\n\nreturn [{\n  json: {\n    ...leadData,\n    foundEmail: bestEmail,\n    allFoundEmails: [...new Set(filteredEmails)].slice(0, 5)\n  }\n}];"
+      },
+      "id": "extract-email",
+      "name": "Extract Email from HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.foundEmail }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            }
+          ]
+        }
+      },
+      "id": "email-found",
+      "name": "Email Found?",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.BACKEND_URL }}/api/webhooks/n8n",
+        "sendBody": true,
+        "contentType": "json",
+        "body": {
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ type: 'lead_email_found', leadId: $json.id, email: $json.foundEmail, emailVerified: false }) }}"
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "save-email-to-backend",
+      "name": "Save Email to Backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1780, 300],
+      "credentials": {
+        "httpHeaderAuth": { "id": "backend-api-auth", "name": "Backend API Auth" }
+      }
+    }
+  ],
+  "connections": {
+    "Every 10 Minutes": {
+      "main": [[{ "node": "Fetch Leads Without Email", "type": "main", "index": 0 }]]
+    },
+    "Fetch Leads Without Email": {
+      "main": [[{ "node": "Split Leads", "type": "main", "index": 0 }]]
+    },
+    "Split Leads": {
+      "main": [[{ "node": "Has Website?", "type": "main", "index": 0 }]]
+    },
+    "Has Website?": {
+      "main": [[{ "node": "Crawl Website", "type": "main", "index": 0 }]]
+    },
+    "Crawl Website": {
+      "main": [[{ "node": "Extract Email from HTML", "type": "main", "index": 0 }]]
+    },
+    "Extract Email from HTML": {
+      "main": [[{ "node": "Email Found?", "type": "main", "index": 0 }]]
+    },
+    "Email Found?": {
+      "main": [[{ "node": "Save Email to Backend", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
