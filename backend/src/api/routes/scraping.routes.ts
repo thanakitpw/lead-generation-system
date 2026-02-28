@@ -37,7 +37,7 @@ router.post('/start', async (req: AuthRequest, res: Response) => {
 
     const n8nUrl = process.env.N8N_WEBHOOK_URL
     if (n8nUrl) {
-      axios.post(`${n8nUrl}/webhook/scrape-start`, {
+      axios.post(`${n8nUrl}/scraping-start`, {
         jobId: job.id,
         campaignId: data.campaignId,
         keywords: data.keywords,
