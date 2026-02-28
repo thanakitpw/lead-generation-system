@@ -128,6 +128,7 @@ model Lead {
 enum LeadStatus {
   NEW
   ENRICHED
+  SELECTED
   EMAILED
   OPENED
   CLICKED

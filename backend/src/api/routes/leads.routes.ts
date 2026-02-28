@@ -50,6 +50,26 @@ router.get('/', async (req: AuthRequest, res: Response) => {
   }
 })
 
+router.post('/select', async (req: AuthRequest, res: Response) => {
+  try {
+    const { leadIds, campaignId } = req.body as { leadIds: string[]; campaignId: string }
+    if (!Array.isArray(leadIds) || leadIds.length === 0 || !campaignId) {
+      return res.status(400).json({ error: 'leadIds and campaignId are required' })
+    }
+    const result = await prisma.lead.updateMany({
+      where: {
+        id: { in: leadIds },
+        email: { not: null },
+        campaignLeads: { some: { campaignId } },
+      },
+      data: { status: 'SELECTED' },
+    })
+    return res.json({ selected: result.count })
+  } catch {
+    return res.status(500).json({ error: 'Failed to select leads' })
+  }
+})
+
 router.get('/:id', async (req: AuthRequest, res: Response) => {
   try {
     const id = req.params.id as string
