@@ -74,7 +74,7 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="text-2xl font-bold text-gray-900">
-              {data?.[key as keyof OverviewData] ?? 0}{suffix}
+              {String(data?.[key as keyof OverviewData] ?? 0)}{suffix}
             </div>
           </div>
         ))}
