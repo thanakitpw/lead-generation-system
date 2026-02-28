@@ -16,6 +16,14 @@ export async function authMiddleware(req: AuthRequest, res: Response, next: Next
 
   const token = authHeader.split(' ')[1]
 
+  // Allow internal service key (used by n8n workflows)
+  const internalKey = process.env.N8N_INTERNAL_KEY
+  if (internalKey && token === internalKey) {
+    req.userId = 'n8n-service'
+    req.userEmail = 'n8n@internal'
+    return next()
+  }
+
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as { userId: string; email: string }
     const user = await prisma.user.findUnique({ where: { id: decoded.userId } })

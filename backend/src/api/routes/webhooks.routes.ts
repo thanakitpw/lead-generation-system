@@ -84,7 +84,50 @@ router.post('/brevo', async (req: Request, res: Response) => {
 
 router.post('/n8n', async (req: Request, res: Response) => {
   try {
-    const { type, jobId, data } = req.body
+    const { type, jobId, data, lead: leadData, campaignId } = req.body
+
+    if (type === 'scraping_lead' && leadData?.companyName) {
+      // Find or create lead by googleMapsPlaceId
+      let lead = leadData.placeId
+        ? await prisma.lead.findFirst({ where: { googleMapsPlaceId: leadData.placeId } })
+        : null
+
+      if (!lead) {
+        lead = await prisma.lead.create({
+          data: {
+            companyName: leadData.companyName,
+            address: leadData.address || null,
+            website: leadData.website || null,
+            phone: leadData.phone || null,
+            googleMapsPlaceId: leadData.placeId || null,
+            googleMapsRating: leadData.rating || null,
+            googleMapsReviews: leadData.totalRatings || null,
+            status: 'NEW',
+          },
+        })
+      }
+
+      // Link lead to campaign
+      const cId = campaignId || (jobId ? (await prisma.scrapingJob.findUnique({ where: { id: jobId }, select: { campaignId: true } }))?.campaignId : null)
+      if (cId) {
+        await prisma.campaignLead.upsert({
+          where: { campaignId_leadId: { campaignId: cId, leadId: lead.id } },
+          create: { campaignId: cId, leadId: lead.id },
+          update: {},
+        })
+        await prisma.campaign.update({
+          where: { id: cId },
+          data: { statsTotalLeads: { increment: lead ? 0 : 1 } },
+        }).catch(() => {})
+      }
+
+      if (jobId) {
+        await prisma.scrapingJob.update({
+          where: { id: jobId },
+          data: { totalFound: { increment: 1 } },
+        }).catch(() => {})
+      }
+    }
 
     if (type === 'scraping_complete' && jobId) {
       await prisma.scrapingJob.update({
