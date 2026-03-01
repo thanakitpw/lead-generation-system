@@ -1,11 +1,15 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Megaphone, FileText, LogOut, Zap, ChevronRight } from 'lucide-react'
+import { LayoutDashboard, Megaphone, FileText, LogOut, Zap, ChevronRight, Building2 } from 'lucide-react'
 import { useAuthStore } from '../../stores/authStore'
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, exact: true },
   { to: '/campaigns', label: 'แคมเปญ', icon: Megaphone },
   { to: '/drafts', label: 'Review Drafts', icon: FileText },
+]
+
+const settingsItems = [
+  { to: '/settings/business-profile', label: 'โปรไฟล์บริษัท', icon: Building2 },
 ]
 
 export default function Layout() {
@@ -39,6 +43,33 @@ export default function Layout() {
               key={to}
               to={to}
               end={exact}
+              className={({ isActive }) =>
+                `group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                  isActive
+                    ? 'bg-primary-50 text-primary-700'
+                    : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800'
+                }`
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  <div className={`p-1.5 rounded-lg transition-colors ${
+                    isActive ? 'bg-primary-100' : 'bg-gray-100 group-hover:bg-gray-200'
+                  }`}>
+                    <Icon size={14} className={isActive ? 'text-primary-600' : 'text-gray-500'} />
+                  </div>
+                  <span className="flex-1">{label}</span>
+                  {isActive && <ChevronRight size={14} className="text-primary-400" />}
+                </>
+              )}
+            </NavLink>
+          ))}
+
+          <p className="px-3 pt-4 pb-2 text-[10px] font-semibold text-gray-400 uppercase tracking-widest">ตั้งค่า</p>
+          {settingsItems.map(({ to, label, icon: Icon }) => (
+            <NavLink
+              key={to}
+              to={to}
               className={({ isActive }) =>
                 `group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
                   isActive

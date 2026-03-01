@@ -227,8 +227,6 @@ export default function CampaignDetailPage() {
   const selectedCount = allLeads.filter((l) => l.status === 'SELECTED').length
   const emailedCount = allLeads.filter((l) => ['EMAILED', 'OPENED', 'CLICKED', 'REPLIED', 'CONVERTED'].includes(l.status)).length
 
-  const canSelectLead = (lead: any) => lead.email && (lead.status === 'NEW' || lead.status === 'ENRICHED')
-
   const tabs: { key: TabFilter; label: string; count: number }[] = [
     { key: 'ALL', label: 'ทั้งหมด', count: allLeads.length },
     { key: 'READY', label: 'พร้อมเลือก', count: readyCount },
@@ -529,6 +527,7 @@ export default function CampaignDetailPage() {
                       }}
                     />
                   </th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">AI Score</th>
                   <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">บริษัท</th>
                   <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">เบอร์โทร</th>
                   <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">เว็บไซต์</th>
@@ -553,6 +552,24 @@ export default function CampaignDetailPage() {
                         checked={selectedIds.has(lead.id)}
                         onChange={() => toggleLead(lead.id)}
                       />
+                    </td>
+                    <td className="px-3 py-3 w-20">
+                      {lead.aiTier ? (
+                        <div className="flex flex-col gap-0.5">
+                          <span className={`inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full w-fit ${
+                            lead.aiTier === 'HOT' ? 'bg-red-100 text-red-600' :
+                            lead.aiTier === 'WARM' ? 'bg-amber-100 text-amber-600' :
+                            'bg-gray-100 text-gray-500'
+                          }`}>
+                            {lead.aiTier === 'HOT' ? '🔥' : lead.aiTier === 'WARM' ? '⚡' : '·'} {lead.aiTier}
+                          </span>
+                          {lead.aiScore != null && (
+                            <span className="text-[10px] text-gray-400 font-medium pl-1">{lead.aiScore}/100</span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-gray-300 text-xs">—</span>
+                      )}
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-2.5">

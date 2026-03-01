@@ -11,6 +11,7 @@ import draftsRoutes from './api/routes/drafts.routes'
 import analyticsRoutes from './api/routes/analytics.routes'
 import webhooksRoutes from './api/routes/webhooks.routes'
 import trackingRoutes from './api/routes/tracking.routes'
+import businessProfileRoutes from './api/routes/business-profile.routes'
 
 const app = express()
 
@@ -35,6 +36,7 @@ app.use('/api/drafts', draftsRoutes)
 app.use('/api/analytics', analyticsRoutes)
 app.use('/api/webhooks', webhooksRoutes)
 app.use('/track', trackingRoutes)
+app.use('/api/business-profile', businessProfileRoutes)
 
 app.use((_req, res) => res.status(404).json({ error: 'Not found' }))
 

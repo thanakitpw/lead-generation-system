@@ -9,6 +9,7 @@ import CampaignDetailPage from './pages/Campaigns/CampaignDetailPage'
 import EditCampaignPage from './pages/Campaigns/EditCampaignPage'
 import DraftsPage from './pages/Drafts/DraftsPage'
 import DraftReviewPage from './pages/Drafts/DraftReviewPage'
+import BusinessProfilePage from './pages/Settings/BusinessProfilePage'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.token)
@@ -35,6 +36,7 @@ export default function App() {
           <Route path="campaigns/:id/edit" element={<EditCampaignPage />} />
           <Route path="drafts" element={<DraftsPage />} />
           <Route path="drafts/:id" element={<DraftReviewPage />} />
+          <Route path="settings/business-profile" element={<BusinessProfilePage />} />
         </Route>
       </Routes>
     </BrowserRouter>
