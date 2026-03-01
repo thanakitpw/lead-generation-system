@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, Play, Pause, Search, Loader2, Mail, Users,
-  Send, Eye, MessageSquare, MapPin, Globe, Phone, Star, ChevronRight, Trash2,
+  Send, Eye, MessageSquare, MapPin, Globe, Phone, Star, ChevronRight, Trash2, AtSign,
 } from 'lucide-react'
 import api from '../../lib/api'
 
@@ -170,6 +170,12 @@ export default function CampaignDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['campaign', id] })
     },
     onError: () => setSelectMsg({ type: 'error', text: 'ลบ lead ไม่สำเร็จ กรุณาลองใหม่' }),
+  })
+
+  const enrichEmailsMutation = useMutation({
+    mutationFn: () => api.post('/leads/enrich-emails', { campaignId: id }),
+    onSuccess: () => setSelectMsg({ type: 'success', text: 'กำลังดึงอีเมลจากเว็บไซต์ — รอประมาณ 1-2 นาที แล้วรีเฟรชหน้า' }),
+    onError: () => setSelectMsg({ type: 'error', text: 'ดึงอีเมลไม่สำเร็จ' }),
   })
 
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
@@ -428,6 +434,16 @@ export default function CampaignDetailPage() {
                 <Loader2 size={10} className="animate-spin" />
                 กำลังรับข้อมูล...
               </span>
+            )}
+            {!isPollingActive && allLeads.some((l) => l.website && !l.email) && (
+              <button
+                onClick={() => enrichEmailsMutation.mutate()}
+                disabled={enrichEmailsMutation.isPending}
+                className="flex items-center gap-1.5 text-xs font-medium text-violet-700 bg-violet-50 border border-violet-200 hover:bg-violet-100 px-2.5 py-1 rounded-full transition-colors disabled:opacity-50"
+              >
+                {enrichEmailsMutation.isPending ? <Loader2 size={10} className="animate-spin" /> : <AtSign size={10} />}
+                ดึงอีเมลจากเว็บไซต์
+              </button>
             )}
           </div>
           {selectedIds.size > 0 && (

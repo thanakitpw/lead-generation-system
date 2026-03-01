@@ -2,6 +2,7 @@ import { Router, Response } from 'express'
 import prisma from '../../lib/prisma'
 import { authMiddleware, AuthRequest } from '../middleware/auth.middleware'
 import { generateDraftForLead } from '../../services/email-draft-generator.service'
+import { extractEmailsForCampaign } from '../../services/email-enrichment.service'
 
 const router = Router()
 router.use(authMiddleware)
@@ -74,6 +75,24 @@ router.post('/select', async (req: AuthRequest, res: Response) => {
     return res.json({ selected: result.count })
   } catch {
     return res.status(500).json({ error: 'Failed to select leads' })
+  }
+})
+
+router.post('/enrich-emails', async (req: AuthRequest, res: Response) => {
+  try {
+    const { campaignId } = req.body as { campaignId: string }
+    if (!campaignId) return res.status(400).json({ error: 'campaignId is required' })
+
+    // Verify campaign belongs to user
+    const campaign = await prisma.campaign.findFirst({ where: { id: campaignId, createdBy: req.userId! } })
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found' })
+
+    // Fire-and-forget — respond immediately
+    extractEmailsForCampaign(campaignId).catch(() => {})
+
+    return res.json({ ok: true, message: 'Email enrichment started in background' })
+  } catch {
+    return res.status(500).json({ error: 'Failed to start email enrichment' })
   }
 })
 

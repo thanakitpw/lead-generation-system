@@ -1,5 +1,15 @@
 const PLACES_BASE = 'https://maps.googleapis.com/maps/api/place'
 
+// Generic/spam email prefixes to filter out
+const SPAM_PREFIXES = [
+  'noreply', 'no-reply', 'donotreply', 'do-not-reply',
+  'support', 'help', 'hello', 'hi',
+  'admin', 'webmaster', 'hostmaster', 'postmaster',
+  'info', 'contact', 'sales', 'service', 'marketing',
+  'your', 'name', 'test', 'user', 'email', 'example',
+  'privacy', 'legal', 'abuse',
+]
+
 export interface PlaceResult {
   placeId: string
   companyName: string
@@ -10,6 +20,7 @@ export interface PlaceResult {
   types: string
   website: string | null
   phone: string | null
+  email: string | null
 }
 
 // Text Search — returns up to 2 pages (max 40 results per keyword)
@@ -38,6 +49,41 @@ async function getPlaceDetails(placeId: string, apiKey: string): Promise<{ websi
   return {
     website: detail.website || null,
     phone: detail.formatted_phone_number || detail.international_phone_number || null,
+  }
+}
+
+// Crawl website homepage and extract the first valid business email
+async function extractEmailFromWebsite(website: string): Promise<string | null> {
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 8000)
+
+    const res = await fetch(website, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; LeadGenBot/1.0)' },
+    })
+    clearTimeout(timeout)
+
+    if (!res.ok) return null
+    const html = await res.text()
+
+    // Extract all email-like patterns from HTML
+    const emailRegex = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g
+    const allEmails = [...new Set(html.match(emailRegex) ?? [])]
+
+    for (const email of allEmails) {
+      const lower = email.toLowerCase()
+      // Skip image/asset paths that look like emails (e.g. icon@2x.png)
+      if (lower.includes('.png') || lower.includes('.jpg') || lower.includes('.svg') || lower.includes('.gif')) continue
+      // Skip spam/generic prefixes
+      const prefix = lower.split('@')[0]
+      if (SPAM_PREFIXES.some((sp) => prefix === sp || prefix.startsWith(sp + '.'))) continue
+      return email.toLowerCase()
+    }
+
+    return null
+  } catch {
+    return null
   }
 }
 
@@ -91,6 +137,12 @@ export async function searchAndEnrichPlaces(
           // ignore — continue without details
         }
 
+        // Extract email from website (best-effort, non-blocking)
+        let email: string | null = null
+        if (details.website) {
+          email = await extractEmailFromWebsite(details.website)
+        }
+
         const enriched: PlaceResult = {
           placeId: place.place_id,
           companyName: place.name,
@@ -101,6 +153,7 @@ export async function searchAndEnrichPlaces(
           types: (place.types ?? []).join(','),
           website: details.website,
           phone: details.phone,
+          email,
         }
 
         results.push(enriched)

@@ -25,23 +25,24 @@ async function saveLead(place: PlaceResult, jobId: string, campaignId: string): 
           address: place.address || null,
           website: place.website || null,
           phone: place.phone || null,
+          email: place.email || null,
+          emailVerified: false,
           industry: place.types ? place.types.split(',')[0] : null,
           googleMapsPlaceId: place.placeId || null,
           googleMapsRating: place.rating ?? null,
           googleMapsReviews: place.totalRatings ?? null,
           status: 'NEW',
-          emailVerified: false,
         },
       })
-    } else if (place.website && !lead.website) {
-      // Enrich existing lead with newly found website/phone
-      lead = await prisma.lead.update({
-        where: { id: lead.id },
-        data: {
-          website: place.website,
-          phone: place.phone || lead.phone,
-        },
-      })
+    } else {
+      // Enrich existing lead with any newly found data
+      const updates: Record<string, any> = {}
+      if (place.website && !lead.website) updates.website = place.website
+      if (place.phone && !lead.phone) updates.phone = place.phone
+      if (place.email && !lead.email) updates.email = place.email
+      if (Object.keys(updates).length > 0) {
+        lead = await prisma.lead.update({ where: { id: lead.id }, data: updates })
+      }
     }
 
     // Link lead to campaign (ignore if already linked)
