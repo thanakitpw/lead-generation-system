@@ -1,8 +1,8 @@
 import { Router, Response } from 'express'
 import { z } from 'zod'
-import axios from 'axios'
 import prisma from '../../lib/prisma'
 import { authMiddleware, AuthRequest } from '../middleware/auth.middleware'
+import { runScrapingJob } from '../../services/scraping-runner.service'
 
 const router = Router()
 router.use(authMiddleware)
@@ -35,18 +35,12 @@ router.post('/start', async (req: AuthRequest, res: Response) => {
       },
     })
 
-    const n8nUrl = process.env.N8N_WEBHOOK_URL
-    if (n8nUrl) {
-      axios.post(`${n8nUrl}/scraping-start`, {
-        jobId: job.id,
-        campaignId: data.campaignId,
-        keywords: data.keywords,
-        location: data.location,
-        maxResults: data.maxResults,
-      }, {
-        headers: { 'x-api-key': process.env.N8N_API_KEY },
-      }).catch((err) => console.error('n8n trigger failed:', err.message))
-    }
+    // Run scraping in background — don't await (fire & forget)
+    runScrapingJob(job.id, data.campaignId, {
+      keywords: data.keywords,
+      location: data.location,
+      maxResults: data.maxResults,
+    }).catch((err) => console.error('[scraping] runner error:', err.message))
 
     return res.status(201).json({ jobId: job.id, status: job.status })
   } catch (err) {
