@@ -1,6 +1,7 @@
 import { Router, Response } from 'express'
 import prisma from '../../lib/prisma'
 import { authMiddleware, AuthRequest } from '../middleware/auth.middleware'
+import { generateDraftForLead } from '../../services/email-draft-generator.service'
 
 const router = Router()
 router.use(authMiddleware)
@@ -64,6 +65,12 @@ router.post('/select', async (req: AuthRequest, res: Response) => {
       },
       data: { status: 'SELECTED' },
     })
+
+    // Fire-and-forget: generate email drafts for each selected lead
+    for (const leadId of leadIds) {
+      generateDraftForLead(leadId, campaignId).catch(() => {})
+    }
+
     return res.json({ selected: result.count })
   } catch {
     return res.status(500).json({ error: 'Failed to select leads' })
