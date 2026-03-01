@@ -84,12 +84,20 @@ router.post('/brevo', async (req: Request, res: Response) => {
 
 router.post('/n8n', async (req: Request, res: Response) => {
   try {
-    const { type, jobId, data, lead: leadData, campaignId } = req.body
+    const body = req.body
+    const type = body.type
+    const jobId = body.jobId
+    const data = body.data
+    const campaignId = body.campaignId
+
+    // Support both nested lead object and flat structure (from n8n bodyParameters)
+    const leadData = body.lead || (body.companyName ? body : null)
 
     if (type === 'scraping_lead' && leadData?.companyName) {
+      const placeId = leadData.placeId || null
       // Find or create lead by googleMapsPlaceId
-      let lead = leadData.placeId
-        ? await prisma.lead.findFirst({ where: { googleMapsPlaceId: leadData.placeId } })
+      let lead = placeId
+        ? await prisma.lead.findFirst({ where: { googleMapsPlaceId: placeId } })
         : null
 
       if (!lead) {
@@ -99,11 +107,19 @@ router.post('/n8n', async (req: Request, res: Response) => {
             address: leadData.address || null,
             website: leadData.website || null,
             phone: leadData.phone || null,
-            googleMapsPlaceId: leadData.placeId || null,
-            googleMapsRating: leadData.rating || null,
-            googleMapsReviews: leadData.totalRatings || null,
+            email: leadData.email || null,
+            emailVerified: false,
+            industry: leadData.types ? String(leadData.types).split(',')[0] : null,
+            googleMapsPlaceId: placeId,
+            googleMapsRating: leadData.rating ? Number(leadData.rating) : null,
+            googleMapsReviews: leadData.totalRatings ? Number(leadData.totalRatings) : null,
             status: 'NEW',
           },
+        })
+      } else if (leadData.email && !lead.email) {
+        lead = await prisma.lead.update({
+          where: { id: lead.id },
+          data: { email: leadData.email, emailVerified: false },
         })
       }
 

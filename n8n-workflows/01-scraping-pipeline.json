@@ -1,6 +1,71 @@
 {
-  "name": "01 - Scraping Pipeline (Google Maps)",
+  "name": "01 - Lead Scraping (Google Places API → Backend)",
   "nodes": [
+    {
+      "parameters": {
+        "content": "## Step 1 — Webhook Trigger\n\nรับ POST จาก Backend เมื่อกด Start Campaign\nPayload: { jobId, campaignId, keyword, location, maxResults }\nตอบ 202 กลับทันที แล้วทำงานต่อ async",
+        "height": 220,
+        "width": 380,
+        "color": 7
+      },
+      "id": "note-1",
+      "name": "Note 1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [240, 100]
+    },
+    {
+      "parameters": {
+        "content": "## Step 2 — Google Places Text Search\n\nเรียก Places API ด้วย query = keyword + location\nใช้ pagetoken loop ได้สูงสุด 3 หน้า (60 results)\nแต่ละ page ต้อง wait 2 วินาทีก่อนเรียก next_page_token",
+        "height": 220,
+        "width": 400,
+        "color": 5
+      },
+      "id": "note-2",
+      "name": "Note 2",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [720, 100]
+    },
+    {
+      "parameters": {
+        "content": "## Step 3 — Place Details\n\nเรียก Place Details API per place_id\nดึง: website, phone, opening_hours, business_status\nLimit ตาม maxResults ก่อนวน loop",
+        "height": 220,
+        "width": 380,
+        "color": 5
+      },
+      "id": "note-3",
+      "name": "Note 3",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1200, 100]
+    },
+    {
+      "parameters": {
+        "content": "## Step 4 — Crawl Website for Email\n\nCrawl homepage + /contact + /contact-us\nExtract email ด้วย regex (same logic จาก original workflow)\nFilter spam/placeholder emails ออก",
+        "height": 220,
+        "width": 380,
+        "color": 4
+      },
+      "id": "note-4",
+      "name": "Note 4",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1680, 100]
+    },
+    {
+      "parameters": {
+        "content": "## Step 5 — Save to Backend\n\nPOST /api/webhooks/n8n\ntype: scraping_lead\nหลังครบทุก lead → POST scraping_complete",
+        "height": 220,
+        "width": 320,
+        "color": 3
+      },
+      "id": "note-5",
+      "name": "Note 5",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [2140, 100]
+    },
     {
       "parameters": {
         "httpMethod": "POST",
@@ -12,29 +77,30 @@
       "name": "Webhook: scraping/start",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [240, 300]
+      "position": [240, 380],
+      "webhookId": "scraping-start-001"
     },
     {
       "parameters": {
-        "jsCode": "const body = $input.first().json.body;\nreturn [{\n  json: {\n    jobId: body.jobId,\n    campaignId: body.campaignId,\n    keywords: Array.isArray(body.keywords) ? body.keywords : [body.keywords],\n    location: body.location,\n    maxResults: body.maxResults || 100\n  }\n}];"
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nreturn [{\n  json: {\n    jobId: body.jobId,\n    campaignId: body.campaignId,\n    keyword: body.keyword || body.keywords?.[0] || '',\n    location: body.location || '',\n    maxResults: parseInt(body.maxResults) || 20\n  }\n}];"
       },
       "id": "parse-input",
       "name": "Parse Input",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [460, 300]
+      "position": [460, 380]
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ { \"success\": true, \"jobId\": $json.jobId, \"message\": \"Scraping started\" } }}",
+        "responseBody": "={{ JSON.stringify({ success: true, jobId: $json.jobId, message: 'Scraping started' }) }}",
         "options": {}
       },
       "id": "respond-accepted",
       "name": "Respond 202 Accepted",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [680, 180]
+      "position": [460, 560]
     },
     {
       "parameters": {
@@ -42,29 +108,78 @@
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "query", "value": "={{ $json.keywords[0] + ' ' + $json.location }}" },
+            { "name": "query", "value": "={{ $json.keyword + ' ' + $json.location }}" },
             { "name": "key", "value": "={{ $env.GOOGLE_MAPS_API_KEY }}" },
-            { "name": "language", "value": "th" },
-            { "name": "type", "value": "establishment" }
+            { "name": "language", "value": "th" }
           ]
         },
         "options": {}
       },
-      "id": "google-places-search",
-      "name": "Google Places Search",
+      "id": "places-search-page1",
+      "name": "Places Search Page 1",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.1,
-      "position": [680, 400]
+      "typeVersion": 4.2,
+      "position": [720, 380]
     },
     {
       "parameters": {
-        "jsCode": "const results = $input.first().json.results || [];\nconst jobId = $('Parse Input').first().json.jobId;\nconst campaignId = $('Parse Input').first().json.campaignId;\n\nreturn results.map(place => ({\n  json: {\n    jobId,\n    campaignId,\n    placeId: place.place_id,\n    companyName: place.name,\n    address: place.formatted_address,\n    website: null,\n    phone: null,\n    rating: place.rating,\n    totalRatings: place.user_ratings_total,\n    lat: place.geometry?.location?.lat,\n    lng: place.geometry?.location?.lng,\n    types: place.types\n  }\n}));"
+        "jsCode": "const page1 = $input.first().json;\nconst inputData = $('Parse Input').first().json;\nconst results = page1.results || [];\nconst nextToken = page1.next_page_token || null;\n\nreturn [{\n  json: {\n    ...inputData,\n    results,\n    nextPageToken: nextToken,\n    totalFound: results.length\n  }\n}];"
       },
-      "id": "extract-places",
-      "name": "Extract Places",
+      "id": "collect-page1",
+      "name": "Collect Page 1 Results",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [900, 400]
+      "position": [940, 380]
+    },
+    {
+      "parameters": {
+        "amount": 2
+      },
+      "id": "wait-page2",
+      "name": "Wait 2s (token cooldown)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1160, 380],
+      "webhookId": "wait-page2-001"
+    },
+    {
+      "parameters": {
+        "url": "https://maps.googleapis.com/maps/api/place/textsearch/json",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "pagetoken", "value": "={{ $json.nextPageToken }}" },
+            { "name": "key", "value": "={{ $env.GOOGLE_MAPS_API_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "places-search-page2",
+      "name": "Places Search Page 2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1380, 380],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const page2 = $input.first().json;\nconst prev = $('Collect Page 1 Results').first().json;\nconst newResults = page2.results || [];\nconst allResults = [...prev.results, ...newResults];\n\nreturn [{\n  json: {\n    ...prev,\n    results: allResults,\n    nextPageToken: page2.next_page_token || null,\n    totalFound: allResults.length\n  }\n}];"
+      },
+      "id": "collect-page2",
+      "name": "Collect Page 2 Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1600, 380]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst maxResults = data.maxResults || 20;\nconst limited = data.results.slice(0, maxResults);\n\nreturn limited.map(place => ({\n  json: {\n    jobId: data.jobId,\n    campaignId: data.campaignId,\n    keyword: data.keyword,\n    location: data.location,\n    placeId: place.place_id,\n    companyName: place.name,\n    address: place.formatted_address || '',\n    rating: place.rating || null,\n    totalRatings: place.user_ratings_total || 0,\n    businessStatus: place.business_status || 'OPERATIONAL',\n    types: (place.types || []).join(',')\n  }\n}));"
+      },
+      "id": "split-places",
+      "name": "Split & Limit Places",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1820, 380]
     },
     {
       "parameters": {
@@ -73,8 +188,12 @@
         "queryParameters": {
           "parameters": [
             { "name": "place_id", "value": "={{ $json.placeId }}" },
-            { "name": "fields", "value": "website,formatted_phone_number,international_phone_number" },
-            { "name": "key", "value": "={{ $env.GOOGLE_MAPS_API_KEY }}" }
+            {
+              "name": "fields",
+              "value": "website,formatted_phone_number,international_phone_number,opening_hours,business_status,address_components"
+            },
+            { "name": "key", "value": "={{ $env.GOOGLE_MAPS_API_KEY }}" },
+            { "name": "language", "value": "th" }
           ]
         },
         "options": {}
@@ -82,52 +201,153 @@
       "id": "get-place-details",
       "name": "Get Place Details",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.1,
-      "position": [1120, 400]
+      "typeVersion": 4.2,
+      "position": [2040, 380],
+      "continueOnFail": true
     },
     {
       "parameters": {
-        "jsCode": "const detail = $input.first().json.result || {};\nconst prev = $('Extract Places').first().json;\n\nreturn [{\n  json: {\n    ...prev,\n    website: detail.website || null,\n    phone: detail.formatted_phone_number || detail.international_phone_number || null\n  }\n}];"
+        "jsCode": "const detail = $input.first().json.result || {};\nconst prev = $('Split & Limit Places').first().json;\n\nconst website = detail.website || null;\nconst phone = detail.formatted_phone_number || detail.international_phone_number || null;\n\nreturn [{\n  json: {\n    ...prev,\n    website,\n    phone\n  }\n}];"
       },
       "id": "merge-details",
-      "name": "Merge Details",
+      "name": "Merge Place Details",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1340, 400]
+      "position": [2260, 380]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.website }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            }
+          ]
+        }
+      },
+      "id": "has-website",
+      "name": "Has Website?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2480, 380]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.website }}",
+        "options": {
+          "timeout": 8000,
+          "allowUnauthorizedCerts": true,
+          "redirect": { "redirect": { "followRedirects": true, "maxRedirects": 3 } }
+        }
+      },
+      "id": "crawl-homepage",
+      "name": "Crawl Homepage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2700, 280],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Merge Place Details').first().json.website }}/contact",
+        "options": {
+          "timeout": 6000,
+          "allowUnauthorizedCerts": true,
+          "redirect": { "redirect": { "followRedirects": true, "maxRedirects": 3 } }
+        }
+      },
+      "id": "crawl-contact",
+      "name": "Crawl /contact",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2700, 460],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "function toStr(x) {\n  if (!x) return '';\n  if (typeof x === 'string') return x;\n  if (x.data && typeof x.data === 'string') return x.data;\n  if (x.body && typeof x.body === 'string') return x.body;\n  return JSON.stringify(x);\n}\n\nconst homeHtml = toStr($('Crawl Homepage').first()?.json);\nconst contactHtml = toStr($('Crawl /contact').first()?.json);\nconst combined = homeHtml + '\\n' + contactHtml;\n\nconst placeData = $('Merge Place Details').first().json;\n\n// Decode obfuscations\nlet html = combined\n  .replace(/[\\u200B-\\u200D\\u2060\\uFEFF]/g, '')\n  .replace(/\\s*\\[at\\]\\s*|\\s*\\(at\\)\\s*|\\s+at\\s+/gi, '@')\n  .replace(/\\s*\\[dot\\]\\s*|\\s*\\(dot\\)\\s*|\\s+dot\\s+/gi, '.')\n  .replace(/&#x40;|&#64;|&commat;/gi, '@')\n  .replace(/&#46;|&period;/gi, '.')\n  .replace(/\\s+@\\s+/g, '@')\n  .replace(/\\s+\\.\\s+/g, '.');\n\n// Extract emails\nconst mailtos = (html.match(/mailto:([a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,24})/gi) || [])\n  .map(m => m.replace(/^mailto:/i, ''));\nconst plain = (html.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,24}/gi) || []);\nlet emails = Array.from(new Set([...mailtos, ...plain].map(e => e.toLowerCase().trim())))\n  .map(e => e.replace(/[),;:'\"]+$/g, ''));\n\n// Filter\nconst assetTLD = new Set(['png','jpg','jpeg','gif','svg','webp','ico','pdf','css','js','mp4']);\nconst denyDomains = /(sentry\\.io|cloudflare\\.com|w3\\.org|example\\.com|test\\.com|localhost)/i;\nconst denyPlaceholder = /^(user|username|name|test|demo)@/i;\n\nemails = emails.filter(e => {\n  const parts = e.split('@');\n  if (parts.length !== 2) return false;\n  const [local, domain] = parts;\n  const tld = domain.split('.').pop();\n  if (assetTLD.has(tld)) return false;\n  if (denyDomains.test(domain)) return false;\n  if (denyPlaceholder.test(local)) return false;\n  if (local.length < 2 || domain.length < 4) return false;\n  return true;\n});\n\n// Pick best email: info@ > contact@ > sales@ > first\nconst priority = ['info@', 'contact@', 'sale', 'hello@', 'admin@'];\nlet bestEmail = null;\nfor (const p of priority) {\n  const found = emails.find(e => e.startsWith(p));\n  if (found) { bestEmail = found; break; }\n}\nif (!bestEmail) bestEmail = emails[0] || null;\n\nreturn [{\n  json: {\n    ...placeData,\n    email: bestEmail,\n    allEmails: emails.slice(0, 5)\n  }\n}];"
+      },
+      "id": "extract-email",
+      "name": "Extract Email from HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2920, 380],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// No website — still save lead without email\nconst d = $input.first().json;\nreturn [{ json: { ...d, email: null, allEmails: [] } }];"
+      },
+      "id": "no-website-lead",
+      "name": "No Website — Skip Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2700, 580]
     },
     {
       "parameters": {
         "url": "={{ $env.BACKEND_URL }}/api/webhooks/n8n",
-        "sendBody": true,
-        "contentType": "json",
-        "body": {
-          "specifyBody": "json",
-          "jsonBody": "={\n  \"type\": \"scraping_lead\",\n  \"jobId\": \"{{ $json.jobId }}\",\n  \"campaignId\": \"{{ $json.campaignId }}\",\n  \"lead\": {\n    \"companyName\": \"{{ $json.companyName }}\",\n    \"address\": \"{{ $json.address }}\",\n    \"website\": {{ $json.website ? '\"' + $json.website + '\"' : 'null' }},\n    \"phone\": {{ $json.phone ? '\"' + $json.phone + '\"' : 'null' }},\n    \"rating\": {{ $json.rating || 'null' }}\n  }\n}"
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
         },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ type: 'scraping_lead', jobId: $json.jobId, campaignId: $json.campaignId, lead: { companyName: $json.companyName, address: $json.address, website: $json.website, phone: $json.phone, email: $json.email, rating: $json.rating, totalRatings: $json.totalRatings, businessStatus: $json.businessStatus, types: $json.types, keyword: $json.keyword, location: $json.location } }) }}",
         "options": {}
       },
-      "id": "save-lead-to-backend",
+      "id": "save-lead-backend",
       "name": "Save Lead to Backend",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.1,
-      "position": [1560, 400]
+      "typeVersion": 4.2,
+      "position": [3140, 380],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "amount": 1
+      },
+      "id": "wait-between-leads",
+      "name": "Wait 1s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [3360, 380],
+      "webhookId": "wait-leads-001"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "loop-over-places",
+      "name": "Loop Over Places",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [3580, 380]
     },
     {
       "parameters": {
         "url": "={{ $env.BACKEND_URL }}/api/webhooks/n8n",
-        "sendBody": true,
-        "contentType": "json",
-        "body": {
-          "specifyBody": "json",
-          "jsonBody": "={\n  \"type\": \"scraping_complete\",\n  \"jobId\": \"{{ $('Parse Input').first().json.jobId }}\",\n  \"status\": \"COMPLETED\"\n}"
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
         },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ type: 'scraping_complete', jobId: $('Parse Input').first().json.jobId, status: 'COMPLETED' }) }}",
         "options": {}
       },
       "id": "mark-job-complete",
       "name": "Mark Job Complete",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.1,
-      "position": [1780, 400]
+      "typeVersion": 4.2,
+      "position": [3800, 380]
     }
   ],
   "connections": {
@@ -137,23 +357,62 @@
     "Parse Input": {
       "main": [
         [{ "node": "Respond 202 Accepted", "type": "main", "index": 0 }],
-        [{ "node": "Google Places Search", "type": "main", "index": 0 }]
+        [{ "node": "Places Search Page 1", "type": "main", "index": 0 }]
       ]
     },
-    "Google Places Search": {
-      "main": [[{ "node": "Extract Places", "type": "main", "index": 0 }]]
+    "Places Search Page 1": {
+      "main": [[{ "node": "Collect Page 1 Results", "type": "main", "index": 0 }]]
     },
-    "Extract Places": {
-      "main": [[{ "node": "Get Place Details", "type": "main", "index": 0 }]]
+    "Collect Page 1 Results": {
+      "main": [[{ "node": "Wait 2s (token cooldown)", "type": "main", "index": 0 }]]
+    },
+    "Wait 2s (token cooldown)": {
+      "main": [[{ "node": "Places Search Page 2", "type": "main", "index": 0 }]]
+    },
+    "Places Search Page 2": {
+      "main": [[{ "node": "Collect Page 2 Results", "type": "main", "index": 0 }]]
+    },
+    "Collect Page 2 Results": {
+      "main": [[{ "node": "Split & Limit Places", "type": "main", "index": 0 }]]
+    },
+    "Split & Limit Places": {
+      "main": [[{ "node": "Loop Over Places", "type": "main", "index": 0 }]]
+    },
+    "Loop Over Places": {
+      "main": [
+        [{ "node": "Mark Job Complete", "type": "main", "index": 0 }],
+        [{ "node": "Get Place Details", "type": "main", "index": 0 }]
+      ]
     },
     "Get Place Details": {
-      "main": [[{ "node": "Merge Details", "type": "main", "index": 0 }]]
+      "main": [[{ "node": "Merge Place Details", "type": "main", "index": 0 }]]
     },
-    "Merge Details": {
+    "Merge Place Details": {
+      "main": [[{ "node": "Has Website?", "type": "main", "index": 0 }]]
+    },
+    "Has Website?": {
+      "main": [
+        [{ "node": "Crawl Homepage", "type": "main", "index": 0 }],
+        [{ "node": "No Website — Skip Email", "type": "main", "index": 0 }]
+      ]
+    },
+    "Crawl Homepage": {
+      "main": [[{ "node": "Crawl /contact", "type": "main", "index": 0 }]]
+    },
+    "Crawl /contact": {
+      "main": [[{ "node": "Extract Email from HTML", "type": "main", "index": 0 }]]
+    },
+    "Extract Email from HTML": {
+      "main": [[{ "node": "Save Lead to Backend", "type": "main", "index": 0 }]]
+    },
+    "No Website — Skip Email": {
       "main": [[{ "node": "Save Lead to Backend", "type": "main", "index": 0 }]]
     },
     "Save Lead to Backend": {
-      "main": [[{ "node": "Mark Job Complete", "type": "main", "index": 0 }]]
+      "main": [[{ "node": "Wait 1s", "type": "main", "index": 0 }]]
+    },
+    "Wait 1s": {
+      "main": [[{ "node": "Loop Over Places", "type": "main", "index": 0 }]]
     }
   },
   "settings": {
