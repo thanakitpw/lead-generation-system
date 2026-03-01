@@ -1,11 +1,23 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, Play, Pause, Search, Loader2, Mail, Users,
-  Send, Eye, MessageSquare, MapPin, Globe, Phone, Star, ChevronRight,
+  Send, Eye, MessageSquare, MapPin, Globe, Phone, Star, ChevronRight, Trash2,
 } from 'lucide-react'
 import api from '../../lib/api'
+
+const THAI_LOCATIONS = [
+  'กรุงเทพมหานคร', 'นนทบุรี', 'ปทุมธานี', 'สมุทรปราการ', 'สมุทรสาคร',
+  'นครปฐม', 'เชียงใหม่', 'เชียงราย', 'ลำปาง', 'ลำพูน', 'แม่ฮ่องสอน',
+  'ขอนแก่น', 'อุดรธานี', 'นครราชสีมา', 'อุบลราชธานี', 'บึงกาฬ',
+  'สกลนคร', 'หนองคาย', 'มุกดาหาร', 'ร้อยเอ็ด', 'มหาสารคาม',
+  'ชลบุรี', 'ระยอง', 'พัทยา', 'จันทบุรี', 'ตราด',
+  'สุราษฎร์ธานี', 'ภูเก็ต', 'นครศรีธรรมราช', 'สงขลา', 'หาดใหญ่',
+  'กระบี่', 'พังงา', 'ตรัง', 'สตูล', 'ปัตตานี',
+  'พิษณุโลก', 'สุโขทัย', 'อุตรดิตถ์', 'แพร่', 'น่าน',
+  'Bangkok, Thailand', 'Chiang Mai, Thailand', 'Phuket, Thailand',
+]
 
 const STATUS_LABEL: Record<string, string> = {
   NEW: 'ใหม่',
@@ -72,6 +84,8 @@ export default function CampaignDetailPage() {
   const queryClient = useQueryClient()
   const [scrapingForm, setScrapingForm] = useState({ keywords: '', location: '', maxResults: 100 })
   const [scrapingMsg, setScrapingMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [isPollingActive, setIsPollingActive] = useState(false)
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null)
   const [tab, setTab] = useState<TabFilter>('ALL')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [selectMsg, setSelectMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
@@ -79,11 +93,33 @@ export default function CampaignDetailPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['campaign', id],
     queryFn: () => api.get(`/campaigns/${id}`).then((r) => r.data),
+    refetchInterval: isPollingActive ? 3000 : false,
   })
+
+  const isScrapingRunning = data?.scrapingJobs?.[0]?.status === 'RUNNING'
+
+  // Prefill location from campaign once loaded (only if user hasn't typed anything yet)
+  useEffect(() => {
+    if (data?.targetLocation) {
+      setScrapingForm((f) => f.location === '' ? { ...f, location: data.targetLocation } : f)
+    }
+  }, [data?.targetLocation])
+
+  // Stop polling only when the specific job we started is done (not an old job)
+  useEffect(() => {
+    if (!isPollingActive || !currentJobId) return
+    const latestJob = data?.scrapingJobs?.[0]
+    if (latestJob?.id === currentJobId && latestJob?.status !== 'RUNNING') {
+      setIsPollingActive(false)
+      setCurrentJobId(null)
+    }
+  }, [isPollingActive, currentJobId, data])
 
   const { data: leadsData, isLoading: leadsLoading } = useQuery({
     queryKey: ['leads', { campaign_id: id }],
     queryFn: () => api.get('/leads', { params: { campaign_id: id, limit: 200 } }).then((r) => r.data),
+    refetchInterval: isPollingActive ? 2000 : false,
+    staleTime: isPollingActive ? 0 : 30_000,
   })
 
   const startMutation = useMutation({
@@ -98,7 +134,11 @@ export default function CampaignDetailPage() {
 
   const scrapeMutation = useMutation({
     mutationFn: (payload: object) => api.post('/scraping/start', payload),
-    onSuccess: (res) => setScrapingMsg({ type: 'success', text: `เริ่ม Scraping แล้ว — Job ID: ${res.data.jobId}` }),
+    onSuccess: (res) => {
+      setScrapingMsg(null)
+      setCurrentJobId(res.data.jobId)
+      setIsPollingActive(true)
+    },
     onError: () => setScrapingMsg({ type: 'error', text: 'เริ่ม Scraping ไม่สำเร็จ กรุณาลองใหม่' }),
   })
 
@@ -112,6 +152,27 @@ export default function CampaignDetailPage() {
     },
     onError: () => setSelectMsg({ type: 'error', text: 'เลือก lead ไม่สำเร็จ' }),
   })
+
+  const deleteLeadMutation = useMutation({
+    mutationFn: (leadId: string) => api.delete(`/leads/${leadId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['leads', { campaign_id: id }] })
+      queryClient.invalidateQueries({ queryKey: ['campaign', id] })
+    },
+  })
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (leadIds: string[]) => api.post('/leads/bulk-delete', { leadIds }),
+    onSuccess: (res) => {
+      setSelectedIds(new Set())
+      setSelectMsg({ type: 'success', text: `ลบ ${res.data.deleted} lead เรียบร้อยแล้ว` })
+      queryClient.invalidateQueries({ queryKey: ['leads', { campaign_id: id }] })
+      queryClient.invalidateQueries({ queryKey: ['campaign', id] })
+    },
+    onError: () => setSelectMsg({ type: 'error', text: 'ลบ lead ไม่สำเร็จ กรุณาลองใหม่' }),
+  })
+
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
 
   const handleScrape = () => {
     if (!scrapingForm.keywords || !scrapingForm.location) return
@@ -207,6 +268,12 @@ export default function CampaignDetailPage() {
                 <span className={`w-1.5 h-1.5 rounded-full ${statusConfig.dot}`} />
                 {statusConfig.label}
               </span>
+              {isScrapingRunning && (
+                <span className="flex items-center gap-1.5 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-full">
+                  <Loader2 size={11} className="animate-spin" />
+                  กำลัง Scraping...
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-3 text-sm text-gray-400">
               {campaign.targetLocation && (
@@ -299,25 +366,31 @@ export default function CampaignDetailPage() {
           <div className="mb-4">
             <label className="block text-xs font-medium text-gray-600 mb-1.5">สถานที่</label>
             <div className="relative">
-              <MapPin size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <MapPin size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
               <input
+                list="scraping-location-list"
                 value={scrapingForm.location}
                 onChange={(e) => setScrapingForm((f) => ({ ...f, location: e.target.value }))}
                 placeholder="เช่น Bangkok, Thailand หรือ กรุงเทพมหานคร"
                 className="w-full pl-8 pr-3 py-2.5 border border-gray-200 rounded-lg text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-shadow"
               />
+              <datalist id="scraping-location-list">
+                {THAI_LOCATIONS.map((loc) => (
+                  <option key={loc} value={loc} />
+                ))}
+              </datalist>
             </div>
           </div>
           <div className="flex items-center gap-3">
             <button
               onClick={handleScrape}
-              disabled={scrapeMutation.isPending || !scrapingForm.keywords || !scrapingForm.location}
+              disabled={scrapeMutation.isPending || isPollingActive || !scrapingForm.keywords || !scrapingForm.location}
               className="flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors disabled:opacity-50 shadow-sm"
             >
-              {scrapeMutation.isPending ? (
+              {scrapeMutation.isPending || isPollingActive ? (
                 <>
                   <Loader2 size={14} className="animate-spin" />
-                  กำลังเริ่ม...
+                  กำลัง Scraping...
                 </>
               ) : (
                 <>
@@ -340,7 +413,7 @@ export default function CampaignDetailPage() {
       {/* Leads Table */}
       <div className="card overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             <div className="p-1.5 rounded-lg bg-gray-50">
               <Users size={14} className="text-gray-500" />
             </div>
@@ -352,17 +425,33 @@ export default function CampaignDetailPage() {
                 </span>
               )}
             </h2>
+            {isPollingActive && (
+              <span className="flex items-center gap-1.5 text-xs text-blue-600 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-full">
+                <Loader2 size={10} className="animate-spin" />
+                กำลังรับข้อมูล...
+              </span>
+            )}
           </div>
           {selectedIds.size > 0 && (
-            <button
-              onClick={handleSelectForEmail}
-              disabled={selectMutation.isPending}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50 shadow-sm"
-            >
-              {selectMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />}
-              สร้างอีเมล
-              <span className="bg-white/20 px-1.5 py-0.5 rounded text-xs">{selectedIds.size}</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500 font-medium">เลือก {selectedIds.size} รายการ</span>
+              <button
+                onClick={handleSelectForEmail}
+                disabled={selectMutation.isPending || bulkDeleteMutation.isPending}
+                className="flex items-center gap-1.5 bg-primary-500 hover:bg-primary-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50 shadow-sm"
+              >
+                {selectMutation.isPending ? <Loader2 size={12} className="animate-spin" /> : <Mail size={12} />}
+                สร้างอีเมล
+              </button>
+              <button
+                onClick={() => setConfirmBulkDelete(true)}
+                disabled={selectMutation.isPending || bulkDeleteMutation.isPending}
+                className="flex items-center gap-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {bulkDeleteMutation.isPending ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                ลบที่เลือก
+              </button>
+            </div>
           )}
         </div>
 
@@ -447,7 +536,8 @@ export default function CampaignDetailPage() {
                   <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">เว็บไซต์</th>
                   <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Rating</th>
                   <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">อีเมล</th>
-                  <th className="px-3 pr-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+                  <th className="px-3 pr-5 py-3 w-10" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -530,12 +620,22 @@ export default function CampaignDetailPage() {
                         <span className="text-gray-300 text-xs">—</span>
                       )}
                     </td>
-                    <td className="px-3 pr-5 py-3">
+                    <td className="px-3 py-3">
                       <span className={`inline-flex items-center text-[11px] font-medium px-2.5 py-1 rounded-full ${
                         STATUS_COLOR[lead.status] ?? 'bg-gray-100 text-gray-600'
                       }`}>
                         {STATUS_LABEL[lead.status] ?? lead.status}
                       </span>
+                    </td>
+                    <td className="px-3 pr-5 py-3">
+                      <button
+                        onClick={() => deleteLeadMutation.mutate(lead.id)}
+                        disabled={deleteLeadMutation.isPending}
+                        className="opacity-0 group-hover:opacity-100 p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all disabled:opacity-50"
+                        title="ลบ lead"
+                      >
+                        <Trash2 size={13} />
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -544,6 +644,42 @@ export default function CampaignDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Bulk Delete Confirm Dialog */}
+      {confirmBulkDelete && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-card-md p-6 max-w-sm w-full">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="p-2.5 rounded-xl bg-red-50">
+                <Trash2 size={18} className="text-red-500" />
+              </div>
+              <h3 className="font-semibold text-gray-900">ลบ Lead ที่เลือก?</h3>
+            </div>
+            <p className="text-sm text-gray-500 mb-5">
+              คุณกำลังจะลบ <span className="font-semibold text-gray-800">{selectedIds.size} รายการ</span> ออกจากระบบ
+              ข้อมูลจะถูกลบถาวรและไม่สามารถกู้คืนได้
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmBulkDelete(false)}
+                className="flex-1 border border-gray-200 text-gray-700 text-sm font-medium py-2.5 rounded-xl hover:bg-gray-50 transition-colors"
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={() => {
+                  setConfirmBulkDelete(false)
+                  bulkDeleteMutation.mutate(Array.from(selectedIds))
+                }}
+                disabled={bulkDeleteMutation.isPending}
+                className="flex-1 bg-red-500 hover:bg-red-600 text-white text-sm font-medium py-2.5 rounded-xl transition-colors disabled:opacity-50"
+              >
+                {bulkDeleteMutation.isPending ? 'กำลังลบ...' : `ลบ ${selectedIds.size} รายการ`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -70,6 +70,38 @@ router.post('/select', async (req: AuthRequest, res: Response) => {
   }
 })
 
+router.post('/bulk-delete', async (req: AuthRequest, res: Response) => {
+  try {
+    const { leadIds } = req.body as { leadIds: string[] }
+    if (!Array.isArray(leadIds) || leadIds.length === 0) {
+      return res.status(400).json({ error: 'leadIds is required' })
+    }
+    await prisma.emailEvent.deleteMany({ where: { campaignLead: { leadId: { in: leadIds } } } })
+    await prisma.emailDraft.deleteMany({ where: { campaignLead: { leadId: { in: leadIds } } } })
+    await prisma.campaignLead.deleteMany({ where: { leadId: { in: leadIds } } })
+    const result = await prisma.lead.deleteMany({ where: { id: { in: leadIds } } })
+    return res.json({ deleted: result.count })
+  } catch {
+    return res.status(500).json({ error: 'Failed to bulk delete leads' })
+  }
+})
+
+router.delete('/:id', async (req: AuthRequest, res: Response) => {
+  try {
+    const id = req.params.id as string
+    const lead = await prisma.lead.findUnique({ where: { id } })
+    if (!lead) return res.status(404).json({ error: 'Lead not found' })
+
+    await prisma.emailEvent.deleteMany({ where: { campaignLead: { leadId: id } } })
+    await prisma.emailDraft.deleteMany({ where: { campaignLead: { leadId: id } } })
+    await prisma.campaignLead.deleteMany({ where: { leadId: id } })
+    await prisma.lead.delete({ where: { id } })
+    return res.json({ ok: true })
+  } catch {
+    return res.status(500).json({ error: 'Failed to delete lead' })
+  }
+})
+
 router.get('/:id', async (req: AuthRequest, res: Response) => {
   try {
     const id = req.params.id as string
