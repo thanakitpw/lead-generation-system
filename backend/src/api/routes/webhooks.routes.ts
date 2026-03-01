@@ -167,6 +167,8 @@ router.post('/n8n', async (req: Request, res: Response) => {
         ? await prisma.lead.findFirst({ where: { googleMapsPlaceId: placeId } })
         : null
 
+      const isNewLead = !lead
+
       if (!lead) {
         lead = await prisma.lead.create({
           data: {
@@ -200,11 +202,16 @@ router.post('/n8n', async (req: Request, res: Response) => {
         }).catch(() => {})
         await prisma.campaign.update({
           where: { id: cId },
-          data: { statsTotalLeads: { increment: lead ? 0 : 1 } },
+          data: { statsTotalLeads: { increment: isNewLead ? 1 : 0 } },
         }).catch(() => {})
       }
 
       if (jobId) {
+        // Transition PENDING → RUNNING on first lead received
+        await prisma.scrapingJob.updateMany({
+          where: { id: jobId, status: 'PENDING' },
+          data: { status: 'RUNNING', startedAt: new Date() },
+        }).catch(() => {})
         await prisma.scrapingJob.update({
           where: { id: jobId },
           data: { totalFound: { increment: 1 } },

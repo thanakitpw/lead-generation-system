@@ -109,7 +109,7 @@ export default function CampaignDetailPage() {
   useEffect(() => {
     if (!isPollingActive || !currentJobId) return
     const latestJob = data?.scrapingJobs?.[0]
-    if (latestJob?.id === currentJobId && latestJob?.status !== 'RUNNING') {
+    if (latestJob?.id === currentJobId && latestJob?.status !== 'RUNNING' && latestJob?.status !== 'PENDING') {
       setIsPollingActive(false)
       setCurrentJobId(null)
     }
