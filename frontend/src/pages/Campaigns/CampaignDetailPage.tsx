@@ -513,23 +513,21 @@ export default function CampaignDetailPage() {
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50/50">
                   <th className="pl-5 pr-3 py-3 w-10">
-                    {(tab === 'ALL' || tab === 'READY') && (
-                      <input
-                        type="checkbox"
-                        className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                        checked={
-                          filteredLeads.filter(canSelectLead).length > 0 &&
-                          filteredLeads.filter(canSelectLead).every((l) => selectedIds.has(l.id))
+                    <input
+                      type="checkbox"
+                      className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                      checked={
+                        filteredLeads.length > 0 &&
+                        filteredLeads.every((l) => selectedIds.has(l.id))
+                      }
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedIds(new Set(filteredLeads.map((l) => l.id)))
+                        } else {
+                          setSelectedIds(new Set())
                         }
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedIds(new Set(filteredLeads.filter(canSelectLead).map((l) => l.id)))
-                          } else {
-                            setSelectedIds(new Set())
-                          }
-                        }}
-                      />
-                    )}
+                      }}
+                    />
                   </th>
                   <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">บริษัท</th>
                   <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">เบอร์โทร</th>
@@ -549,16 +547,12 @@ export default function CampaignDetailPage() {
                     }`}
                   >
                     <td className="pl-5 pr-3 py-3">
-                      {canSelectLead(lead) ? (
-                        <input
-                          type="checkbox"
-                          className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                          checked={selectedIds.has(lead.id)}
-                          onChange={() => toggleLead(lead.id)}
-                        />
-                      ) : (
-                        <div className="w-4" />
-                      )}
+                      <input
+                        type="checkbox"
+                        className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                        checked={selectedIds.has(lead.id)}
+                        onChange={() => toggleLead(lead.id)}
+                      />
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-2.5">
