@@ -107,6 +107,11 @@ model Lead {
   websiteCrawledAt    DateTime? @map("website_crawled_at")
   companyDescription  String?   @map("company_description")
 
+  // AI Lead Scoring
+  aiScore   Int?    @map("ai_score")
+  aiTier    String? @map("ai_tier")
+  aiReason  String? @map("ai_reason")
+
   // CRM (HubSpot)
   hubspotContactId  String? @map("hubspot_contact_id")
   hubspotDealId     String? @map("hubspot_deal_id")
@@ -136,6 +141,37 @@ enum LeadStatus {
   CONVERTED
   UNSUBSCRIBED
   BOUNCED
+}
+
+// ===== BUSINESS PROFILE =====
+model BusinessProfile {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+
+  // Basic info
+  companyName       String  @map("company_name")
+  companyWebsite    String? @map("company_website")
+  facebookPage      String? @map("facebook_page")
+  companyDescription String? @map("company_description")
+
+  // What we sell
+  productsServices  String? @map("products_services")
+  valueProposition  String? @map("value_proposition")
+
+  // Target customer
+  targetIndustries  String[] @map("target_industries")
+  targetCustomerSize String? @map("target_customer_size")
+  targetDescription  String? @map("target_description")
+
+  // AI-extracted data
+  aiExtracted       Boolean  @default(false) @map("ai_extracted")
+  aiExtractedAt     DateTime? @map("ai_extracted_at")
+  aiRawSummary      String?  @map("ai_raw_summary")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("business_profiles")
 }
 
 // ===== CAMPAIGN LEADS (junction) =====

@@ -130,7 +130,7 @@ router.post('/n8n', async (req: Request, res: Response) => {
           where: { campaignId_leadId: { campaignId: cId, leadId: lead.id } },
           create: { campaignId: cId, leadId: lead.id },
           update: {},
-        })
+        }).catch(() => {})
         await prisma.campaign.update({
           where: { id: cId },
           data: { statsTotalLeads: { increment: lead ? 0 : 1 } },

@@ -6,6 +6,7 @@ import DashboardPage from './pages/DashboardPage'
 import CampaignsPage from './pages/Campaigns/CampaignsPage'
 import NewCampaignPage from './pages/Campaigns/NewCampaignPage'
 import CampaignDetailPage from './pages/Campaigns/CampaignDetailPage'
+import EditCampaignPage from './pages/Campaigns/EditCampaignPage'
 import DraftsPage from './pages/Drafts/DraftsPage'
 import DraftReviewPage from './pages/Drafts/DraftReviewPage'
 
@@ -31,6 +32,7 @@ export default function App() {
           <Route path="campaigns" element={<CampaignsPage />} />
           <Route path="campaigns/new" element={<NewCampaignPage />} />
           <Route path="campaigns/:id" element={<CampaignDetailPage />} />
+          <Route path="campaigns/:id/edit" element={<EditCampaignPage />} />
           <Route path="drafts" element={<DraftsPage />} />
           <Route path="drafts/:id" element={<DraftReviewPage />} />
         </Route>

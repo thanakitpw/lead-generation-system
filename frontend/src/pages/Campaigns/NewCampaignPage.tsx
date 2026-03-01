@@ -1,8 +1,20 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronUp } from 'lucide-react'
 import api from '../../lib/api'
+
+const THAI_LOCATIONS = [
+  'กรุงเทพมหานคร', 'นนทบุรี', 'ปทุมธานี', 'สมุทรปราการ', 'สมุทรสาคร',
+  'นครปฐม', 'เชียงใหม่', 'เชียงราย', 'ลำปาง', 'ลำพูน', 'แม่ฮ่องสอน',
+  'ขอนแก่น', 'อุดรธานี', 'นครราชสีมา', 'อุบลราชธานี', 'บึงกาฬ',
+  'สกลนคร', 'หนองคาย', 'มุกดาหาร', 'ร้อยเอ็ด', 'มหาสารคาม',
+  'ชลบุรี', 'ระยอง', 'พัทยา', 'จันทบุรี', 'ตราด',
+  'สุราษฎร์ธานี', 'ภูเก็ต', 'นครศรีธรรมราช', 'สงขลา', 'หาดใหญ่',
+  'กระบี่', 'พังงา', 'ตรัง', 'สตูล', 'ปัตตานี',
+  'พิษณุโลก', 'สุโขทัย', 'อุตรดิตถ์', 'แพร่', 'น่าน',
+  'Bangkok, Thailand', 'Chiang Mai, Thailand', 'Phuket, Thailand',
+]
 
 interface CampaignForm {
   name: string
@@ -33,6 +45,7 @@ export default function NewCampaignPage() {
     systemPrompt: '',
   })
   const [error, setError] = useState('')
+  const [showAdvanced, setShowAdvanced] = useState(false)
 
   const mutation = useMutation({
     mutationFn: (data: Record<string, unknown>) => api.post('/campaigns', data),
@@ -87,56 +100,82 @@ export default function NewCampaignPage() {
           <h2 className="text-sm font-semibold text-gray-700 mb-4">ข้อมูลทั่วไป</h2>
           <div className="space-y-4">
             {field('ชื่อแคมเปญ *', 'name')}
-            {field('Location', 'targetLocation', 'text', 'เช่น Bangkok, Thailand หรือ เชียงใหม่')}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+              <p className="text-xs text-gray-400 mb-1">เลือกจากรายการหรือพิมพ์เอง</p>
+              <input
+                list="location-list"
+                value={form.targetLocation}
+                onChange={(e) => setForm((f) => ({ ...f, targetLocation: e.target.value }))}
+                placeholder="เช่น กรุงเทพมหานคร, เชียงใหม่"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+              <datalist id="location-list">
+                {THAI_LOCATIONS.map((loc) => (
+                  <option key={loc} value={loc} />
+                ))}
+              </datalist>
+            </div>
             {field('Keywords', 'targetKeywords', 'text', 'คั่นด้วยคอมม่า เช่น โรงงานอาหาร, food factory')}
             {field('Industry (optional)', 'targetIndustry')}
           </div>
         </div>
 
-        <hr className="border-gray-100" />
-
         <div>
-          <h2 className="text-sm font-semibold text-gray-700 mb-4">การตั้งค่าการส่งอีเมล</h2>
-          <div className="space-y-4">
-            {field('ชื่อผู้ส่ง', 'senderName')}
-            {field('อีเมลผู้ส่ง', 'senderEmail', 'email')}
-            {field('Reply-To Email', 'replyToEmail', 'email')}
-            <div className="grid grid-cols-2 gap-4">
-              {field('Daily Send Limit', 'dailySendLimit', 'number')}
+          <button
+            type="button"
+            onClick={() => setShowAdvanced((v) => !v)}
+            className="w-full flex items-center justify-between text-sm font-medium text-gray-500 hover:text-gray-700 py-2 transition-colors"
+          >
+            <span>ตั้งค่าขั้นสูง (อีเมล & AI)</span>
+            {showAdvanced ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+          </button>
+
+          {showAdvanced && (
+            <div className="mt-3 space-y-5 border-t border-gray-100 pt-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Confidence Threshold
-                  <span className="ml-2 text-xs text-gray-400">({Math.round(form.confidenceThreshold * 100)}%)</span>
-                </label>
-                <input
-                  type="range"
-                  min="0.5"
-                  max="1"
-                  step="0.05"
-                  value={form.confidenceThreshold}
-                  onChange={(e) => setForm((f) => ({ ...f, confidenceThreshold: Number(e.target.value) }))}
-                  className="w-full mt-2"
-                />
-                <div className="flex justify-between text-xs text-gray-400 mt-1">
-                  <span>50%</span><span>75% (default)</span><span>100%</span>
+                <h2 className="text-sm font-semibold text-gray-700 mb-4">การตั้งค่าการส่งอีเมล</h2>
+                <div className="space-y-4">
+                  {field('ชื่อผู้ส่ง', 'senderName')}
+                  {field('อีเมลผู้ส่ง', 'senderEmail', 'email')}
+                  {field('Reply-To Email', 'replyToEmail', 'email')}
+                  <div className="grid grid-cols-2 gap-4">
+                    {field('Daily Send Limit', 'dailySendLimit', 'number')}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Confidence Threshold
+                        <span className="ml-2 text-xs text-gray-400">({Math.round(form.confidenceThreshold * 100)}%)</span>
+                      </label>
+                      <input
+                        type="range"
+                        min="0.5"
+                        max="1"
+                        step="0.05"
+                        value={form.confidenceThreshold}
+                        onChange={(e) => setForm((f) => ({ ...f, confidenceThreshold: Number(e.target.value) }))}
+                        className="w-full mt-2"
+                      />
+                      <div className="flex justify-between text-xs text-gray-400 mt-1">
+                        <span>50%</span><span>75% (default)</span><span>100%</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
+
+              <div>
+                <h2 className="text-sm font-semibold text-gray-700 mb-1">AI System Prompt</h2>
+                <p className="text-xs text-gray-400 mb-2">อธิบายว่าเราเสนออะไร และ AI ควรเน้นอะไรในอีเมล</p>
+                <textarea
+                  value={form.systemPrompt}
+                  onChange={(e) => setForm((f) => ({ ...f, systemPrompt: e.target.value }))}
+                  rows={4}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+                  placeholder="เช่น เราเป็นบริษัทที่ให้บริการ AI automation สำหรับ SME ไทย ช่วยลดเวลาทำงานซ้ำซากลง 80%..."
+                />
+              </div>
             </div>
-          </div>
-        </div>
-
-        <hr className="border-gray-100" />
-
-        <div>
-          <h2 className="text-sm font-semibold text-gray-700 mb-1">AI System Prompt</h2>
-          <p className="text-xs text-gray-400 mb-2">อธิบายว่าเราเสนออะไร และ AI ควรเน้นอะไรในอีเมล</p>
-          <textarea
-            value={form.systemPrompt}
-            onChange={(e) => setForm((f) => ({ ...f, systemPrompt: e.target.value }))}
-            rows={4}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
-            placeholder="เช่น เราเป็นบริษัทที่ให้บริการ AI automation สำหรับ SME ไทย ช่วยลดเวลาทำงานซ้ำซากลง 80%..."
-          />
+          )}
         </div>
 
         {error && (

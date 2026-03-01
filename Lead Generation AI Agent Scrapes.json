@@ -1,0 +1,724 @@
+{
+  "name": "This Lead Generation AI Agent Scrapes Unlimited Leads For FREE",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// Input: { html, website, keyword, location }\n// Output: { html, website, keyword, location, phone }\n\nconst html = String($json.html || '');\nconst flat = html.replace(/\\s+/g, ' ');\n\n// ---------- helpers ----------\nconst onlyDigits = s => (s || '').replace(/\\D/g, '');\nconst hasSep = s => /[()\\s\\-\\.]/.test(s || ''); // any separator\nconst balancedParens = s => {\n  const opens = (s.match(/\\(/g) || []).length;\n  const closes = (s.match(/\\)/g) || []).length;\n  return opens === closes;\n};\nconst lowVariety = s => {\n  const d = onlyDigits(s);\n  const uniq = new Set(d.split(''));\n  return d.length >= 9 && uniq.size <= 2; // e.g., 999999999, 111111111, 90909090\n};\nconst looksLikeImageSize = s => /\\d{2,4}x\\d{2,4}/i.test(s); // 300x200\nconst hasDecimal = s => /\\d\\.\\d/.test(s);                    // 144.9703\nconst tooLongBareRun = s => {\n  const d = onlyDigits(s);\n  return d.length > 13 || (!s.startsWith('+') && d.length >= 12 && !hasSep(s));\n};\nfunction normalize(s) {\n  return (s || '').replace(/\\s+/g, ' ').trim();\n}\nfunction valid(s, isGeneral = false) {\n  if (!s) return false;\n  if (hasDecimal(s)) return false;\n  if (looksLikeImageSize(s)) return false;\n  if (!balancedParens(s)) return false;\n  if (lowVariety(s)) return false;\n  if (tooLongBareRun(s)) return false;\n\n  const d = onlyDigits(s);\n  if (d.length < 8 || d.length > 15) return false; // global-ish bounds\n\n  // For general matches, require at least one separator unless it starts with +\n  if (isGeneral && !s.startsWith('+') && !hasSep(s)) return false;\n\n  // Reject obvious placeholders\n  if (/999[\\s\\-]?999[\\s\\-]?9999|000+/.test(d)) return false;\n\n  return true;\n}\n\n// ---------- 1) tel: links (best) ----------\nconst telMatches = [...flat.matchAll(/href=[\"']tel:([+()\\d\\-\\s\\.]+)/gi)]\n  .map(m => normalize(m[1]));\n\n// ---------- 2) numbers near \"phone/tel/call\" ----------\nconst labeled = [];\nconst labelRe = /(?:phone|tel|telephone|call)[:\\s]*(?:<\\/?[^>]*>|\\s){0,16}([+()\\d\\-\\s\\.]{7,30})/gi;\nlet lm;\nwhile ((lm = labelRe.exec(flat)) !== null) labeled.push(normalize(lm[1]));\n\n// ---------- 3) general fallback ----------\nconst generalRaw = flat.match(/(?:\\+?\\d{1,4}[\\s\\-\\.]?)?(?:\\(?\\d{2,4}\\)?[\\s\\-\\.]?)\\d{3,4}[\\s\\-\\.]?\\d{3,4}(?:[\\s\\-\\.]?\\d{1,4})?/g) || [];\nconst general = generalRaw.map(normalize).filter(s => valid(s, true));\n\n// ---------- de-dup (priority: tel > labeled > general) ----------\nconst seen = new Set();\nconst ordered = [];\nfor (const arr of [telMatches, labeled, general]) {\n  for (const s of arr) {\n    if (!valid(s, arr === general)) continue;\n    const key = onlyDigits(s);\n    if (seen.has(key)) continue;\n    seen.add(key);\n    ordered.push(s);\n  }\n}\n\nlet phone = ordered[0] || 'No phone listed';\n\n// Force Sheets to treat phone as text (avoid \"+1-800...\" becoming math)\nif (phone !== 'No phone listed' && phone.startsWith('+')) {\n  phone = `'` + phone;\n}\n\nreturn [{ json: { ...$json, phone } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        16,
+        720
+      ],
+      "id": "adf353b1-56b9-480f-a935-89eca5d3aa47",
+      "name": "Extract Phone Number",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "content": "## Step 5 — Write & Continue\n\nAppend or update one row per website in Google Sheets with: Email(s) (aggregated), Website, Keyword, Location, Phone.\nMatching column is Website; Value Input Mode is RAW to avoid formula parsing.\nShort pause, then continue the loop.",
+        "height": 384,
+        "width": 416,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        400,
+        528
+      ],
+      "id": "a1c88bf6-a71f-46c1-84cf-ef7321f995c4",
+      "name": "Sticky Note4"
+    },
+    {
+      "parameters": {
+        "content": "## Step 4 — Combine & Extract Emails\n\nMerge all fetched HTML, extract valid emails, and detect phone.\nRole inboxes like info@/contact@ are allowed; assets, trackers, placeholders, and image-size false positives are filtered out.\nIf no email is found, the email cell carries a clear note; phone is always filled (or “No phone listed”).",
+        "height": 384,
+        "width": 576,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -224,
+        528
+      ],
+      "id": "172bc826-7167-475d-9685-f02866f7f37a",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "content": "## Step 3 — Fetch Pages (per website)\n\nFor each site, fetch the homepage, pause briefly, then try /contact and /contact-us to maximize email hit-rate while staying free.\nThese fetch nodes are set to Continue On Fail and Always Output Data so the run never breaks on a missing page.",
+        "height": 384,
+        "width": 832
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1104,
+        528
+      ],
+      "id": "15f5e288-099e-4cf4-8c2a-ec14d49b6e75",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "content": "## Step 2 — Parse & Prep Websites\n\nFetch Google Maps results HTML, extract candidate websites, drop junk (google/gstatic/schema), de-dupe, then limit to your requested count for a fast demo.\nOutputs a clean list of websites into the loop.",
+        "height": 368,
+        "width": 1120,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -256,
+        144
+      ],
+      "id": "c20d08bf-4211-488d-9a38-cfb6fd1fc4f2",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "## Step 1 — Inputs (Form)\n\nCollect run variables from the form: Keyword, Location, Max Leads.\nMaps them to consistent fields in Edit Fields.\nKeeps the template free: no API keys required, only Google Sheets.",
+        "height": 320,
+        "width": 720
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1024,
+        144
+      ],
+      "id": "dd179b8c-8c0c-44ba-bdd3-efa72881719f",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "jsCode": "function toStr(x){ \n  if (x && typeof x.data === 'string') return x.data;\n  if (x && typeof x.body === 'string') return x.body;\n  return String(x ?? '');\n}\nconst home = toStr($node[\"Scrape Specific URLs\"].json);\nconst c1   = toStr($node[\"Contact Page 1\"].json);\nconst c2   = toStr($node[\"Contact Page 2\"].json);\n\nconst website  = $item(0).$node[\"Loop Over Items\"].json.website || \"\";\nconst keyword  = $node[\"Get Form Data\"].json?.Keyword  ?? \"\";\nconst location = $node[\"Get Form Data\"].json?.Location ?? \"\";\n\nreturn [{ json: { html: home + \"\\n\" + c1 + \"\\n\" + c2, website, keyword, location } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -192,
+        720
+      ],
+      "id": "2dfb3a85-34d1-4876-8976-512e6eafb286",
+      "name": "Combine HTML Code"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Loop Over Items').item.json.website }}/contact-us",
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -464,
+        720
+      ],
+      "id": "1c84e15e-419d-4461-b98e-22968b0c3dcd",
+      "name": "Contact Page 2",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Loop Over Items').item.json.website }}/contact",
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -656,
+        720
+      ],
+      "id": "1e1f4b17-4c29-44a2-8c78-97d89d90863a",
+      "name": "Contact Page 1",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "amount": 3
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -832,
+        720
+      ],
+      "id": "a959ac97-6bc6-484c-8dc9-6ca0004c5128",
+      "name": "Wait1",
+      "webhookId": "e2d9b41a-e4ff-4e45-bc72-d23f3f21151b"
+    },
+    {
+      "parameters": {
+        "amount": 3
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        624,
+        720
+      ],
+      "id": "384d17e1-7806-492f-a2cf-f5d739bf69b8",
+      "name": "Wait",
+      "webhookId": "f549954f-9e88-451e-b159-7ff47e733a25"
+    },
+    {
+      "parameters": {
+        "url": "=https://www.google.com/maps/search/{{ $json.Location }}+{{ $json.Keyword }}",
+        "options": {
+          "allowUnauthorizedCerts": true,
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -464,
+        288
+      ],
+      "id": "41f09a22-f9c5-4d9f-b81a-7b173740a4c0",
+      "name": "Scrape Google Maps"
+    },
+    {
+      "parameters": {
+        "jsCode": "  const input = $input.first().json.data\nconst regex = /https?:\\/\\/[^\\/\\s\";>]+/g\nconst websites = input.match(regex)\nreturn websites.map(website => ({json:{website}}))"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        288
+      ],
+      "id": "0590eb7a-f1af-4727-8048-d419e0be7b44",
+      "name": "Extract URLs"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "dd2d4629-974c-4916-872d-c27573e42820",
+              "leftValue": "={{ $json.website }}",
+              "rightValue": "schema",
+              "operator": {
+                "type": "string",
+                "operation": "notContains"
+              }
+            },
+            {
+              "id": "5e8fb4cb-9dff-4712-bc7c-19f2e6038daa",
+              "leftValue": "={{ $json.website }}",
+              "rightValue": "google",
+              "operator": {
+                "type": "string",
+                "operation": "notContains"
+              }
+            },
+            {
+              "id": "b9824ac1-7467-4bfc-a861-8954da2f4cf3",
+              "leftValue": "={{ $json.website }}",
+              "rightValue": "gg",
+              "operator": {
+                "type": "string",
+                "operation": "notContains"
+              }
+            },
+            {
+              "id": "b83657ae-83e8-47d1-be38-dc48359ea532",
+              "leftValue": "={{ $json.website }}",
+              "rightValue": "gstatic",
+              "operator": {
+                "type": "string",
+                "operation": "notContains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        80,
+        288
+      ],
+      "id": "36ae1139-e848-4d8c-b49e-eddaf633a247",
+      "name": "Filter"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.removeDuplicates",
+      "typeVersion": 2,
+      "position": [
+        304,
+        288
+      ],
+      "id": "f163b85a-703b-43f7-a8ab-186642766567",
+      "name": "Remove Duplicates"
+    },
+    {
+      "parameters": {
+        "maxItems": "={{ $('Get Form Data').item.json['Max Items'] }}"
+      },
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        528,
+        288
+      ],
+      "id": "3fc96148-f3ef-4fe3-ae30-8a641dca5f74",
+      "name": "Limit"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.website }}",
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1056,
+        720
+      ],
+      "id": "de3c04ab-bbf5-4652-84a5-7a5ca90ce682",
+      "name": "Scrape Specific URLs",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1801696744,
+          "mode": "list",
+          "cachedResultName": "Lead Results",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1QFOenYDrjJVkG4cFhgUoMLKIwx3SnF6qFj_fsZ_98t4/edit#gid=1801696744"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Email": "={{ $json.email }}",
+            "Website": "={{ $json.website }}",
+            "Keyword": "={{ $json.keyword }}",
+            "Location": "={{ $json.location }}",
+            "Phone": "={{ $json.phone }}"
+          },
+          "matchingColumns": [
+            "Website"
+          ],
+          "schema": [
+            {
+              "id": "Email",
+              "displayName": "Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Phone",
+              "displayName": "Phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Website",
+              "displayName": "Website",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Keyword",
+              "displayName": "Keyword",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Location",
+              "displayName": "Location",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "useAppend": true
+        }
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        464,
+        720
+      ],
+      "id": "171cb9b3-19b1-4e34-b6e0-12c2e4003e7b",
+      "name": "Add to Sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "DV5U2iv2r7JEC9pX",
+          "name": "Google Sheets account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        768,
+        288
+      ],
+      "id": "176d62cf-8ada-4161-bd7a-def20a3b0e95",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Input: { html, website, keyword, location, phone }\n// Output: exactly ONE row per website (emails aggregated)\n\n// --- read + normalize ---\nlet html = String($json.html ?? $json ?? \"\");\n\n// decode simple obfuscations and entities\nhtml = html\n  // zero-width chars\n  .replace(/[\\u200B-\\u200D\\u2060\\uFEFF]/g, \"\")\n  // [at]/(at)/ \" at \"\n  .replace(/\\s*\\[at\\]\\s*|\\s*\\(at\\)\\s*|\\s+at\\s+/gi, \"@\")\n  // [dot]/(dot)/ \" dot \"\n  .replace(/\\s*\\[dot\\]\\s*|\\s*\\(dot\\)\\s*|\\s+dot\\s+/gi, \".\")\n  // HTML entities for @ and .\n  .replace(/&#x40;|&#64;|&commat;/gi, \"@\")\n  .replace(/&#46;|&period;/gi, \".\")\n  // spacing around @ and .\n  .replace(/\\s+@\\s+/g, \"@\")\n  .replace(/\\s+\\.\\s+/g, \".\");\n\n// --- collect candidates ---\nconst mailtos = (html.match(/mailto:([a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,24})/gi) || [])\n  .map(m => m.replace(/^mailto:/i, \"\"));\nconst plain = (html.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,24}/gi) || []);\nlet emails = Array.from(new Set([...mailtos, ...plain].map(e => e.toLowerCase().trim())))\n  .map(e => e.replace(/[),;:'\"]+$/g, \"\")); // trim trailing punctuation\n\n// --- validators/filters (roles allowed) ---\nconst strict = /^[a-z0-9](?:[a-z0-9._%+-]{0,62}[a-z0-9])@(?:[a-z0-9-]+\\.)+[a-z]{2,24}$/i;\nconst assetTLD = new Set([\n  \"png\",\"jpg\",\"jpeg\",\"gif\",\"svg\",\"webp\",\"ico\",\"bmp\",\"apng\",\"avif\",\n  \"pdf\",\"css\",\"js\",\"map\",\"woff\",\"woff2\",\"ttf\",\"otf\",\"mp4\",\"webm\",\"mov\",\"mkv\",\"heic\",\"heif\"\n]);\nconst denyTrackerDomains = /(ingest\\.sentry\\.io|\\.sentry\\.io|cloudflare\\.com|cloudfront\\.net|googlemail\\.com|w3\\.org)$/i;\nconst denyPlaceholderDomains = /(domain\\.com|example\\.(com|org|net)|yourdomain\\.com|email\\.com|test\\.com|localhost|invalid)$/i;\nconst denyPlaceholderPairs   = /^(user|username|name|yourname|firstname|lastname|test|demo)@(domain\\.com|example\\.com|yourdomain\\.com|test\\.com|email\\.com)$/i;\n// tokens like @2x or -300x200 in the domain\nconst sizeTokenInDomain = /(@\\d+(?:\\.\\d+)?x)|(?:^|[.\\-])\\d+(?:\\.\\d+)?x\\d+(?:\\.\\d+)?(?:[.\\-]|$)/i;\n// reject “hashy” locals like 5f12ad6e7261...\nconst isHashyLocal = (local) => /^[a-f0-9]{20,}$/.test(local);\n\n// filter sequence\nemails = emails\n  .filter(e => strict.test(e))\n  .filter(e => {\n    const dom = (e.split(\"@\")[1] || \"\");\n    const tld = (dom.split(\".\").pop() || \"\").toLowerCase();\n    return !assetTLD.has(tld);\n  })\n  .filter(e => !denyTrackerDomains.test((e.split(\"@\")[1] || \"\")))\n  .filter(e => {\n    const [local, dom] = e.split(\"@\");\n    return !denyPlaceholderDomains.test(dom || \"\") && !denyPlaceholderPairs.test(e) && !isHashyLocal(local || \"\");\n  })\n  .filter(e => !sizeTokenInDomain.test(e.split(\"@\")[1] || \"\"));\n\n// --- attach meta ---\nconst website  = $json.website  || ($item(0).$node[\"Loop Over Items\"].json.website || \"\");\nconst keyword  = $json.keyword  || ($node[\"Get Form Data\"].json?.Keyword  ?? \"\");\nconst location = $json.location || ($node[\"Get Form Data\"].json?.Location ?? \"\");\nconst phoneRaw = $json.phone || '';\nconst phone    = phoneRaw || 'No phone listed';\n\n// --- aggregate to ONE row per website ---\nconst uniq = Array.from(new Set(emails));\nlet emailCell = \"\";\n\nif (uniq.length > 0) {\n  emailCell = uniq.join(\", \");\n} else if (phoneRaw && phoneRaw !== 'No phone listed') {\n  // leading apostrophe forces literal text in Sheets (prevents formula parsing)\n  emailCell = `'Phone only: ${phoneRaw} — please double-check on the website before calling, or use the contact form`;\n} else {\n  emailCell = `'No email — use the website contact form`;\n}\n\nreturn [{\n  json: {\n    email: emailCell,\n    website,\n    keyword,\n    location,\n    phone\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        720
+      ],
+      "id": "703453da-008c-4135-a9d5-7523c21a535b",
+      "name": "Extract Emails",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "formTitle": "Lead Generation AI Agent – Free Google Maps Scraper",
+        "formDescription": "Enter your lead search details below and click Submit to start scraping.\nThe AI Agent will find businesses from Google Maps, visit their websites, and collect publicly available emails automatically.\nAll results are saved in your connected Google Sheet — no paid APIs or sign-ups needed.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Business Type / Keyword",
+              "placeholder": "Dentist",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Location",
+              "placeholder": "Melbourne",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Max Items",
+              "fieldType": "number",
+              "placeholder": "20",
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.3,
+      "position": [
+        -912,
+        288
+      ],
+      "id": "592848b7-95fb-4c00-8df5-6b17a303066a",
+      "name": "On form submission",
+      "webhookId": "6e5b95e6-8652-40d4-98f1-9605e5c8ded6"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "eca1ce5d-e181-4feb-a1e5-7041fa66ea81",
+              "name": "Keyword",
+              "value": "={{ $json['Business Type / Keyword'] }}",
+              "type": "string"
+            },
+            {
+              "id": "48cfcd1d-8aef-4463-b62d-0b3dbdad6e28",
+              "name": "Location",
+              "value": "={{ $json.Location }}",
+              "type": "string"
+            },
+            {
+              "id": "34af16e5-d022-4d23-9d39-889e1f79c9c0",
+              "name": "Max Items",
+              "value": "={{ $json['Max Items'] }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -688,
+        288
+      ],
+      "id": "acd4c54a-d734-4e1c-8719-a479296d6b71",
+      "name": "Get Form Data"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Combine HTML Code": {
+      "main": [
+        [
+          {
+            "node": "Extract Phone Number",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contact Page 2": {
+      "main": [
+        [
+          {
+            "node": "Combine HTML Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contact Page 1": {
+      "main": [
+        [
+          {
+            "node": "Contact Page 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait1": {
+      "main": [
+        [
+          {
+            "node": "Contact Page 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Phone Number": {
+      "main": [
+        [
+          {
+            "node": "Extract Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scrape Google Maps": {
+      "main": [
+        [
+          {
+            "node": "Extract URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract URLs": {
+      "main": [
+        [
+          {
+            "node": "Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter": {
+      "main": [
+        [
+          {
+            "node": "Remove Duplicates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remove Duplicates": {
+      "main": [
+        [
+          {
+            "node": "Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scrape Specific URLs": {
+      "main": [
+        [
+          {
+            "node": "Wait1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add to Sheet": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Scrape Specific URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Emails": {
+      "main": [
+        [
+          {
+            "node": "Add to Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "On form submission": {
+      "main": [
+        [
+          {
+            "node": "Get Form Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Form Data": {
+      "main": [
+        [
+          {
+            "node": "Scrape Google Maps",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "c7cb53fa-11fb-4e6e-886a-7cccfe146505",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "2baf34c010bba56e1fc9c05b0e3469be88ef539db09a83b806a10cd72e1b340c"
+  },
+  "id": "LohsWsMl0wyTAzZL",
+  "tags": []
+}

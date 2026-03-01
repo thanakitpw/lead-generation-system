@@ -82,15 +82,15 @@ OPENROUTER_API_KEY=sk-or-xxxxxxxxx
 AI_MODEL=anthropic/claude-3-haiku
 
 # Brevo Email → https://app.brevo.com/settings/keys/api
-BREVO_API_KEY=xkeysib-xxxxxxxxx
+BREVO_API_KEY=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
 BREVO_SENDER_EMAIL=your@email.com
-BREVO_SENDER_NAME=Your Name
+BREVO_SENDER_NAME=Best Solutions
 
 # Google Maps → https://console.cloud.google.com (เปิด Places API)
-GOOGLE_MAPS_API_KEY=AIzaxxxxxxxxx
+GOOGLE_MAPS_API_KEY=AIzaSyBNT04W4_7vdNYm3L8CE9-58tbMa-bTtQA
 
 # HubSpot → Settings → Integrations → Private Apps
-HUBSPOT_ACCESS_TOKEN=pat-na1-xxxxxxxxx
+HUBSPOT_ACCESS_TOKEN=pat-na2-b1392fc5-60b3-446b-bc99-80e25c9cd121
 
 # Line Notify → https://notify-bot.line.me/my/
 LINE_NOTIFY_TOKEN=xxxxxxxxx

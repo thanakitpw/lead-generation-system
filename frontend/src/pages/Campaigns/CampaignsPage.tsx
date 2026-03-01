@@ -1,6 +1,7 @@
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
-import { Plus, Play, Pause, ChevronRight } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { Plus, Play, Pause, ChevronRight, Pencil, Trash2 } from 'lucide-react'
 import api from '../../lib/api'
 
 interface Campaign {
@@ -26,6 +27,9 @@ const statusLabel: Record<string, { label: string; className: string }> = {
 
 export default function CampaignsPage() {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+
   const { data: campaigns = [], isLoading } = useQuery<Campaign[]>({
     queryKey: ['campaigns'],
     queryFn: () => api.get('/campaigns').then((r) => r.data),
@@ -39,6 +43,14 @@ export default function CampaignsPage() {
   const pauseMutation = useMutation({
     mutationFn: (id: string) => api.put(`/campaigns/${id}/pause`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['campaigns'] }),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/campaigns/${id}`),
+    onSuccess: () => {
+      setConfirmDeleteId(null)
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] })
+    },
   })
 
   return (
@@ -70,7 +82,11 @@ export default function CampaignsPage() {
             const openRate = c.statsEmailsSent > 0 ? Math.round((c.statsEmailsOpened / c.statsEmailsSent) * 100) : 0
             const replyRate = c.statsEmailsSent > 0 ? Math.round((c.statsEmailsReplied / c.statsEmailsSent) * 100) : 0
             return (
-              <div key={c.id} className="bg-white rounded-xl border border-gray-200 p-5 hover:border-gray-300 transition-colors">
+              <div
+                key={c.id}
+                className="bg-white rounded-xl border border-gray-200 p-5 hover:border-gray-300 hover:shadow-sm transition-all cursor-pointer"
+                onClick={() => navigate(`/campaigns/${c.id}`)}
+              >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
@@ -91,25 +107,39 @@ export default function CampaignsPage() {
                     )}
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     {c.status === 'ACTIVE' ? (
                       <button
-                        onClick={() => pauseMutation.mutate(c.id)}
+                        onClick={(e) => { e.stopPropagation(); pauseMutation.mutate(c.id) }}
                         className="flex items-center gap-1.5 text-sm text-amber-600 border border-amber-200 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-lg transition-colors"
                       >
                         <Pause size={13} /> หยุด
                       </button>
                     ) : (
                       <button
-                        onClick={() => startMutation.mutate(c.id)}
+                        onClick={(e) => { e.stopPropagation(); startMutation.mutate(c.id) }}
                         className="flex items-center gap-1.5 text-sm text-green-600 border border-green-200 bg-green-50 hover:bg-green-100 px-3 py-1.5 rounded-lg transition-colors"
                       >
                         <Play size={13} /> เริ่ม
                       </button>
                     )}
-                    <Link to={`/campaigns/${c.id}`} className="text-gray-400 hover:text-gray-600">
-                      <ChevronRight size={18} />
-                    </Link>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); navigate(`/campaigns/${c.id}/edit`) }}
+                      className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                      title="แก้ไข"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(c.id) }}
+                      className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      title="ลบ"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                    <div className="p-1.5 text-gray-300">
+                      <ChevronRight size={16} />
+                    </div>
                   </div>
                 </div>
 
@@ -129,6 +159,33 @@ export default function CampaignsPage() {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* Delete Confirm Dialog */}
+      {confirmDeleteId && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full">
+            <h3 className="font-semibold text-gray-900 mb-2">ลบแคมเปญ?</h3>
+            <p className="text-sm text-gray-500 mb-5">
+              การลบจะลบ leads และข้อมูลทั้งหมดในแคมเปญนี้ด้วย ไม่สามารถกู้คืนได้
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmDeleteId(null)}
+                className="flex-1 border border-gray-300 text-gray-700 text-sm font-medium py-2 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={() => deleteMutation.mutate(confirmDeleteId)}
+                disabled={deleteMutation.isPending}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white text-sm font-medium py-2 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {deleteMutation.isPending ? 'กำลังลบ...' : 'ลบเลย'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

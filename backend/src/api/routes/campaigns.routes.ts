@@ -112,4 +112,21 @@ router.put('/:id/pause', async (req: AuthRequest, res: Response) => {
   }
 })
 
+router.delete('/:id', async (req: AuthRequest, res: Response) => {
+  try {
+    const id = req.params.id as string
+    const campaign = await prisma.campaign.findFirst({ where: { id, createdBy: req.userId! } })
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found' })
+
+    await prisma.emailEvent.deleteMany({ where: { campaignLead: { campaignId: id } } })
+    await prisma.emailDraft.deleteMany({ where: { campaignLead: { campaignId: id } } })
+    await prisma.campaignLead.deleteMany({ where: { campaignId: id } })
+    await prisma.scrapingJob.deleteMany({ where: { campaignId: id } })
+    await prisma.campaign.delete({ where: { id } })
+    return res.json({ ok: true })
+  } catch {
+    return res.status(500).json({ error: 'Failed to delete campaign' })
+  }
+})
+
 export default router
