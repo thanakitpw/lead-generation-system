@@ -81,7 +81,8 @@ router.post('/bulk-delete', async (req: AuthRequest, res: Response) => {
     await prisma.campaignLead.deleteMany({ where: { leadId: { in: leadIds } } })
     const result = await prisma.lead.deleteMany({ where: { id: { in: leadIds } } })
     return res.json({ deleted: result.count })
-  } catch {
+  } catch (err) {
+    console.error('[bulk-delete]', err)
     return res.status(500).json({ error: 'Failed to bulk delete leads' })
   }
 })
