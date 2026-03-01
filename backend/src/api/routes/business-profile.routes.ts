@@ -93,18 +93,18 @@ router.post('/extract', async (req: AuthRequest, res: Response) => {
         messages: [
           {
             role: 'user',
-            content: `Extract business information from this webpage text and return ONLY valid JSON with these fields:
+            content: `สกัดข้อมูลธุรกิจจากเนื้อหาเว็บไซต์นี้ และตอบกลับเป็น JSON ที่ถูกต้องเท่านั้น (ไม่ต้องมี markdown) ให้ข้อมูลทุกฟิลด์เป็นภาษาไทย:
 {
-  "companyName": "company name",
-  "companyDescription": "1-2 sentence description of what the company does",
-  "productsServices": "list of main products or services",
-  "valueProposition": "what makes them unique or their key value prop",
-  "targetIndustries": ["industry1", "industry2"],
-  "targetCustomerSize": "SME | Enterprise | All sizes",
-  "targetDescription": "who is their target customer"
+  "companyName": "ชื่อบริษัท",
+  "companyDescription": "อธิบายธุรกิจ 1-2 ประโยคว่าทำอะไร",
+  "productsServices": "รายการสินค้าหรือบริการหลัก",
+  "valueProposition": "จุดแข็งหรือสิ่งที่ทำให้โดดเด่น",
+  "targetIndustries": ["อุตสาหกรรม1", "อุตสาหกรรม2"],
+  "targetCustomerSize": "SME | Enterprise | ทุกขนาด",
+  "targetDescription": "กลุ่มลูกค้าเป้าหมายคือใคร"
 }
 
-Webpage text:
+เนื้อหาเว็บไซต์:
 ${text}`,
           },
         ],
