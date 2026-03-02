@@ -1,12 +1,11 @@
 import prisma from '../lib/prisma'
 
+// Non-human/automated email prefixes to filter out (keep info@, contact@, sales@ — valid B2B)
 const SPAM_PREFIXES = [
   'noreply', 'no-reply', 'donotreply', 'do-not-reply',
-  'support', 'help', 'hello', 'hi',
   'admin', 'webmaster', 'hostmaster', 'postmaster',
-  'info', 'contact', 'sales', 'service', 'marketing',
   'your', 'name', 'test', 'user', 'email', 'example',
-  'privacy', 'legal', 'abuse',
+  'privacy', 'legal', 'abuse', 'bounce', 'mailer-daemon',
 ]
 
 async function extractEmailFromWebsite(website: string): Promise<string | null> {
